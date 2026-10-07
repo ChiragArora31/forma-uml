@@ -79,6 +79,15 @@ export interface Revision {
   model: string | null;
   created_at: string;
   timings: { design_ms: number; render_ms: number; total_ms: number };
+  quality?: {
+    status: 'reviewed' | 'revised' | 'needs_review' | 'unavailable';
+    summary: string;
+    covered_requirements: string[];
+    missing_requirements: string[];
+    critical_issues: string[];
+    suggestions: string[];
+    structural_issues: string[];
+  };
 }
 export interface ConversationSummary {
   id: string;

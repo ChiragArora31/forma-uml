@@ -242,3 +242,20 @@ async def test_configured_model_fallback_only_on_capacity_errors():
     result = await live.generate(SEBI_PROMPT, None, [])
     assert seen == ["primary", "fallback"]
     assert result["trace"]["model"] == "fallback"
+
+
+async def test_temporary_capacity_failure_retries_and_counts_failed_calls():
+    attempts = 0
+
+    async def handle(request):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            return httpx.Response(
+                503, json={"error": {"message": "temporary capacity", "type": "server_error"}}
+            )
+        return httpx.Response(200, json=completion(BASE))
+
+    result = await provider(httpx.MockTransport(handle)).generate(SEBI_PROMPT, None, [])
+    assert attempts == result["trace"]["model_calls"] == 3
+    assert result["architecture"].title == BASE["title"]

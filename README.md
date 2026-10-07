@@ -71,7 +71,7 @@ FORMA_MODEL=gpt-4.1-mini
 # FORMA_BASE_URL=https://api.openai.com/v1
 ```
 
-Live mode accepts arbitrary software briefs and incremental or replacement specifications. The provider is accessed through LangChain; a LangGraph pipeline generates and validates one shared typed architecture, deterministically compiles the requested views, and validates each one using the actual PlantUML renderer. Invalid schema/reference output receives up to two bounded repair attempts on Gemini, or one on other compatible providers. Gemini uses a supported tool-schema projection while full validation remains local; identifier spelling is normalized without inventing missing references. Provider errors never silently switch to sample mode.
+Live mode accepts arbitrary software briefs and incremental or replacement specifications. The provider is accessed through LangChain; a LangGraph pipeline generates and validates one shared typed architecture, deterministically compiles the requested views, and validates each one using the actual PlantUML renderer. Invalid schema/reference output receives up to two bounded repair attempts on Gemini, or one on other compatible providers. Gemini uses a supported tool-schema projection while full validation remains local; identifier spelling is normalized without inventing missing references. Provider errors never silently switch to sample mode. The hosted configuration also reviews the candidate against the actual brief and previous design, checks deployment coverage and lifecycle reachability, and can produce one reviewed correction. The six-call budget and deadline bound the entire process. A review outage preserves the valid candidate and is visible in Design notes; reviewer judgments assist human assessment and do not prove correctness.
 
 The hosted demo uses **Gemini 3.1 Flash-Lite** from a dedicated Google project with billing disabled. Local no-key startup remains a curated sample. The configurable OpenAI-compatible example is [GPT-4.1 mini](https://developers.openai.com/api/docs/models/gpt-4.1-mini), chosen for tool calling and non-reasoning latency. The model and endpoint are configurable. The interface is not coupled to this model. Credentials never go to the browser, exports, or Git.
 
@@ -111,7 +111,7 @@ FORMA_MODEL=gemini-3.1-flash-lite
 FORMA_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
 ```
 
-The hosted trial limits AI attempts to 12 per anonymous workspace and 150 globally per UTC day. Each attempt can make at most three model calls; provider limits still apply. The separate curated case study is always available without a model call. Saving a review never starts paid training.
+The hosted trial limits AI attempts to 25 per anonymous workspace and 70 globally per UTC day. Each attempt shares a six-call budget across generation, bounded repairs, capacity retries, and optional requirement review; provider limits still apply. The separate curated case study is always available without a model call. Saving a review never starts paid training.
 
 ## Fourteen UML perspectives
 

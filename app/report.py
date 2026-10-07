@@ -96,6 +96,25 @@ def design_report(revision, reviews, packaged=False):
             )
         else:
             lines.append(f"- {label} · syntax verified")
+    quality = revision.get("quality")
+    if quality:
+        lines += [
+            "",
+            "## Automatic requirement review",
+            "",
+            text(quality["summary"]),
+            "",
+            "AI review assists assessment; it does not prove correctness.",
+        ]
+        issues = [
+            *quality.get("missing_requirements", []),
+            *quality.get("critical_issues", []),
+            *quality.get("structural_issues", []),
+        ]
+        if issues:
+            lines += ["", "Points to resolve:", *[f"- {text(issue)}" for issue in issues]]
+        if quality.get("suggestions"):
+            lines += ["", "Optional improvements:", *[f"- {text(s)}" for s in quality["suggestions"]]]
     lines += ["", "## Reviews of this revision", ""]
     if reviews:
         lines += [

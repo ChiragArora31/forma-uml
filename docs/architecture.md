@@ -120,3 +120,10 @@ Builds render all 42 case-study projections with the pinned engine. Cold instanc
 Live attempts use transactional daily counters shared across instances. HTTP streams send heartbeats and enforce an overall verification deadline, while cancellation closes the underlying graph and render processes. Hosted rendering uses two processes and a 45-second individual timeout within the fixed resource budget.
 
 Workspace names and reversible archive state are separate from immutable blueprint revisions. Drafts and preview edits use versioned browser storage. A design URL restores that browser’s workspace; it does not grant access to another browser. Preview SVG/PNG downloads reflect the validated edited source, while ZIP exports retain the original generated revision and include a human-readable brief plus feedback snapshot.
+
+
+## Bounded requirement review
+
+`FORMA_SEMANTIC_REVIEW=true` enables a second structured review of the actual brief, prior architecture, saved feedback, and proposed design. Advisory structural checks cover deployment omissions, disconnected components, and unreachable states. Explicit omissions or contradictions can trigger one corrected proposal and a second review; the original valid proposal is retained if the correction cannot be assessed or does not reduce the reported issue count. Generation, schema repairs, transient capacity retries, and review share a six-call budget and generation deadline. Reviewer outages remain visible in Design notes without discarding valid output. Private audit/tool messages are excluded from public revisions and handoff reports. Existing stored revisions remain compatible.
+
+The hosted free-tier provider is Gemini 3.5 Flash Lite with Gemini 3.1 Flash Lite as a capacity fallback. Medium reasoning is used when review is enabled. Review results are model judgments rather than guarantees; human assessment remains necessary. Sequence fragments group consecutive messages sharing a condition; lifecycle projections mark all sink states as terminal.

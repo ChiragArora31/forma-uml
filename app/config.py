@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     java: str = "java"
     model: str = "gpt-4.1-mini"
     fallback_model: str | None = None
+    semantic_review: bool = False
     live_daily_limit: int = 12
     live_global_daily_limit: int = 150
     api_key: str = ""

@@ -143,6 +143,21 @@ class Store:
             result[key] = json.loads(result[key])
         trace = json.loads(result.pop("trace", "{}"))
         result["model"] = trace.get("model")
+        quality = trace.get("quality")
+        if isinstance(quality, dict):
+            result["quality"] = {
+                k: quality[k]
+                for k in (
+                    "status",
+                    "summary",
+                    "covered_requirements",
+                    "missing_requirements",
+                    "critical_issues",
+                    "suggestions",
+                    "structural_issues",
+                )
+                if k in quality
+            }
         result.pop("request_hash", None)
         return result
 

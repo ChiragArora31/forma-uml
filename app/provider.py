@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import time
 from typing import Protocol
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, convert_to_openai_messages
@@ -11,6 +12,7 @@ from pydantic import ValidationError
 
 from app.config import Settings
 from app.models import Architecture
+from app.quality import CallBudget, improve_design
 from app.sample import sample_architecture
 
 SYSTEM_PROMPT = """You are a careful software architect. Convert the user's software design into one coherent Architecture.
@@ -35,6 +37,7 @@ Use concise, readable labels. Summarize what the design achieves and why its bou
 SYSTEM_PROMPT += "\nAll component and entity IDs must use lowercase snake_case: for example ingestion_service, not Ingestion-Service. Keep references identical."
 SYSTEM_PROMPT += "\nWhen a tool is provided, call the Architecture tool exactly once to return the design; do not return prose instead. Entity operations are plain strings such as 'parseCircular()'; attributes and example_values are objects with name and type. Use an empty string for optional guard/condition/alternative text when not applicable. For a complex multi-stage pipeline, use 6-12 components where independent responsibilities and failure boundaries warrant them."
 SYSTEM_PROMPT += "\nActor names are not component IDs. Calls and workflow steps must refer only to declared components. Represent a participating external system or reviewer workspace as a component where needed. Never refer to an undeclared component. Domain relations must refer ONLY to IDs declared in entities, never service/component IDs. Component dependencies belong in connections, not relations."
+SYSTEM_PROMPT += "\nCover each explicit requirement in the architecture, not just in its summary. Model independent responsibilities with meaningful boundaries and domain relationships rather than a single generic engine. Declare access checks, evidence lineage, idempotency, retries and human decisions where the brief requires them. Every internal component must appear in the deployment topology, all lifecycle states must be reachable, and terminal states must have no outgoing transitions. A sequence fragment spanning several messages must use the same fragment and condition on each consecutive message in that group. Do not claim exactly-once delivery without specifying the actual consistency/idempotency boundary. Keep required features distinct from inferred operational defaults."
 
 
 def normalize_identifiers(candidate):
@@ -209,6 +212,7 @@ class LiveProvider:
         self.fallback_name = settings.fallback_model
         self.gemini = bool(settings.base_url and "generativelanguage.googleapis.com" in settings.base_url)
         self.timeout = settings.generation_timeout
+        self.review_enabled = settings.semantic_review
         self.options = dict(
             api_key=credential,
             base_url=settings.base_url,
@@ -218,16 +222,21 @@ class LiveProvider:
             max_tokens=14000,
         )
         if self.gemini:
-            self.options["reasoning_effort"] = "low"
+            self.options["reasoning_effort"] = "medium" if self.review_enabled else "low"
         self.llm = ChatOpenAI(model=settings.model, **self.options)
 
-    async def generate(self, prompt, previous, feedback):
+    async def generate(self, prompt, previous, feedback, *, _budget=None, _review=True, _correction=None):
+        started = time.perf_counter()
+        budget = _budget or CallBudget()
         messages = design_messages(prompt, previous, feedback)
+        if _correction:
+            messages.append(HumanMessage(content=json.dumps(_correction, ensure_ascii=False)))
         attempts = []
         active_name = self.model_name
         active_llm = self.llm
         used_fallback = False
         repair_candidate = None
+        transient_retries = 0
         try:
             async with asyncio.timeout(self.timeout):
                 for _ in range(3 if self.gemini else 2):
@@ -237,6 +246,7 @@ class LiveProvider:
                                 tool = convert_to_openai_tool(Architecture)
                                 tool["function"]["parameters"] = gemini_schema(tool["function"]["parameters"])
                                 constrain_repair_references(tool["function"]["parameters"], repair_candidate)
+                                budget.consume()
                                 raw = await active_llm.bind_tools([tool], tool_choice="required").ainvoke(
                                     messages
                                 )
@@ -250,12 +260,21 @@ class LiveProvider:
                                 model = active_llm.with_structured_output(
                                     Architecture, method="function_calling", include_raw=True
                                 )
+                                budget.consume()
                                 result = await model.ainvoke(messages)
                             break
                         except APIStatusError as error:
                             if error.status_code in {429, 503} and self.fallback_name and not used_fallback:
                                 active_name, used_fallback = self.fallback_name, True
                                 active_llm = ChatOpenAI(model=active_name, **self.options)
+                                continue
+                            if (
+                                error.status_code == 503
+                                and transient_retries < 2
+                                and budget.used < budget.limit
+                            ):
+                                transient_retries += 1
+                                await asyncio.sleep(transient_retries)
                                 continue
                             if error.status_code == 429:
                                 raise ProviderError(
@@ -275,16 +294,43 @@ class LiveProvider:
                         }
                     )
                     if result.get("parsed") is not None:
-                        return {
+                        completed = {
                             "architecture": result["parsed"],
                             "trace": {
                                 "provider": "live",
                                 "model": active_name,
                                 "attempts": attempts,
                                 "trainable": False,
+                                "model_calls": budget.used,
                                 "note": "Captured for review. ART training re-rolls these scenarios on the trainable policy.",
                             },
                         }
+                        remaining = self.timeout - (time.perf_counter() - started) - 5
+                        if self.review_enabled and _review and remaining > 5:
+
+                            async def regenerate(correction):
+                                return await self.generate(
+                                    prompt,
+                                    previous,
+                                    feedback,
+                                    _budget=budget,
+                                    _review=False,
+                                    _correction=correction,
+                                )
+
+                            return await improve_design(
+                                active_llm,
+                                self.gemini,
+                                prompt,
+                                previous,
+                                feedback,
+                                completed,
+                                budget,
+                                gemini_schema,
+                                regenerate,
+                                min(55, remaining),
+                            )
+                        return completed
                     if self.gemini:
                         # A fresh repair context avoids replaying stripped Gemini thought signatures.
                         repair_candidate = (

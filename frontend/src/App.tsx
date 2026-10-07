@@ -1226,7 +1226,44 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-                      <h3>Requirements covered</h3>
+                      {revision.quality && (
+                        <section aria-label="Automatic requirement review">
+                          <h3>Automatic requirement review</h3>
+                          <p>{revision.quality.summary}</p>
+                          <p className="helper">
+                            An AI review assists assessment; human review is still needed.
+                          </p>
+                          {[
+                            ...revision.quality.missing_requirements,
+                            ...revision.quality.critical_issues,
+                            ...revision.quality.structural_issues,
+                          ].length > 0 && (
+                            <>
+                              <h4>Points to resolve</h4>
+                              <ul>
+                                {[
+                                  ...revision.quality.missing_requirements,
+                                  ...revision.quality.critical_issues,
+                                  ...revision.quality.structural_issues,
+                                ].map((issue, i) => (
+                                  <li key={i}>{issue}</li>
+                                ))}
+                              </ul>
+                            </>
+                          )}
+                          {revision.quality.suggestions.length > 0 && (
+                            <details>
+                              <summary>Optional improvements</summary>
+                              <ul>
+                                {revision.quality.suggestions.map((suggestion, i) => (
+                                  <li key={i}>{suggestion}</li>
+                                ))}
+                              </ul>
+                            </details>
+                          )}
+                        </section>
+                      )}
+                      <h3>Design requirements</h3>
                       <ol>
                         {revision.architecture.requirements.map((r) => (
                           <li key={r}>{r}</li>

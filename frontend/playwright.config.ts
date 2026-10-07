@@ -6,6 +6,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   use: {
+    storageState: process.env.FORMA_E2E_STORAGE_STATE,
     baseURL: process.env.FORMA_E2E_URL ?? 'http://127.0.0.1:5178',
     viewport: { width: 1440, height: 960 },
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE },

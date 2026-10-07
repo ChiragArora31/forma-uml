@@ -99,13 +99,19 @@ def compile_diagram(a: Architecture, kind: DiagramType) -> str:
                 "ui": "boundary",
             }[c.kind]
             lines.append(f"{shape} {quoted(c.name)} as {c.id}")
+        fragment = None
         for i in a.interactions:
-            if i.fragment != "none":
-                lines.append(f"{i.fragment} {text(i.condition or '')}")
+            current = (i.fragment, i.condition) if i.fragment != "none" else None
+            if current != fragment:
+                if fragment:
+                    lines.append("end")
+                if current:
+                    lines.append(f"{i.fragment} {text(i.condition or '')}")
+                fragment = current
             arrow = {"call": "->", "return": "-->", "async": "->>"}[i.kind]
             lines.append(f"{i.source} {arrow} {i.target} : {text(i.message)}")
-            if i.fragment != "none":
-                lines.append("end")
+        if fragment:
+            lines.append("end")
     elif kind in [DiagramType.CLASS, DiagramType.OBJECT]:
         for e in a.entities:
             declaration = "class" if kind == DiagramType.CLASS else "object"
@@ -233,7 +239,10 @@ def compile_diagram(a: Architecture, kind: DiagramType) -> str:
         for t in a.transitions:
             label = text(t.event) + (f" [{text(t.guard)}]" if t.guard else "")
             lines.append(f"state_{a.states.index(t.source)} --> state_{a.states.index(t.target)} : {label}")
-        lines.append(f"state_{len(a.states) - 1} --> [*]")
+        outgoing = {t.source for t in a.transitions}
+        for index, state in enumerate(a.states):
+            if state not in outgoing:
+                lines.append(f"state_{index} --> [*]")
     elif kind == DiagramType.COMMUNICATION:
         lines.append("left to right direction")
         for c in a.components:
@@ -255,7 +264,7 @@ def compile_diagram(a: Architecture, kind: DiagramType) -> str:
                         f"if ({text(s.guard)}) then (yes)",
                         ":Continue;",
                         "else (no)",
-                        f":ref Manual review\n{text(s.alternative or '')}; <<procedure>>",
+                        f":ref {text(names[s.owner])} alternate flow\n{text(s.alternative or '')}; <<procedure>>",
                         "stop",
                         "endif",
                     ]

@@ -124,7 +124,8 @@ class Step(StrictModel):
         description="ID declared in components. Human actions belong to the participating workspace/UI component."
     )
     guard: str | None = Field(
-        max_length=100, description="A decision condition; when present, alternative must also be nonempty."
+        max_length=100,
+        description="Postcondition checked after this action. Perform authorization as its own action before protected access. When present, alternative must be nonempty.",
     )
     alternative: str | None = Field(
         max_length=140, description="What happens when the guard is false. Empty only when guard is empty."
@@ -188,15 +189,15 @@ class Timeline(StrictModel):
 class Architecture(StrictModel):
     title: str = Field(min_length=1, max_length=100)
     summary: str = Field(min_length=1, max_length=1000)
-    requirements: list[str] = Field(min_length=1, max_length=15)
+    requirements: list[str] = Field(min_length=1, max_length=30)
     assumptions: list[str] = Field(min_length=1, max_length=12)
     components: list[Component] = Field(min_length=2, max_length=16)
     connections: list[Connection] = Field(min_length=1, max_length=30)
     entities: list[Entity] = Field(min_length=1, max_length=10)
     relations: list[Relation] = Field(max_length=20)
     actors: list[Actor] = Field(min_length=1, max_length=6)
-    steps: list[Step] = Field(min_length=1, max_length=12)
-    interactions: list[Interaction] = Field(min_length=1, max_length=24)
+    steps: list[Step] = Field(min_length=1, max_length=20)
+    interactions: list[Interaction] = Field(min_length=1, max_length=40)
     states: list[str] = Field(min_length=2, max_length=12)
     transitions: list[Transition] = Field(min_length=1, max_length=20)
     nodes: list[Node] = Field(min_length=1, max_length=8)

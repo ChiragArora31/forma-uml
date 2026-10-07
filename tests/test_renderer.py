@@ -76,6 +76,28 @@ def test_private_aliases_avoid_reserved_words_without_mutating_the_blueprint():
     assert architecture.model_dump() == snapshot
 
 
+def test_sequence_groups_contiguous_messages_in_the_same_loop():
+    a = sample_architecture(SEBI_PROMPT)
+    a.interactions[0].fragment = a.interactions[1].fragment = "loop"
+    a.interactions[0].condition = a.interactions[1].condition = "For each circular"
+    source = compile_diagram(a, DiagramType.SEQUENCE)
+    assert source.count("loop For each circular") == 1
+    start = source.index("loop For each circular")
+    end = source.index("\nend", start)
+    assert a.interactions[0].message in source[start:end]
+    assert a.interactions[1].message in source[start:end]
+
+
+def test_state_machine_marks_all_terminal_outcomes_without_ending_an_active_state():
+    a = sample_architecture(SEBI_PROMPT)
+    a.states.append("Rejected")
+    a.transitions.append(a.transitions[-1].model_copy(update={"target": "Rejected"}))
+    source = compile_diagram(a, DiagramType.STATE_MACHINE)
+    assert "state_4 --> [*]" in source and "state_5 --> [*]" in source
+    a.transitions.append(a.transitions[-1].model_copy(update={"source": "Rejected", "target": a.states[0]}))
+    assert "state_5 --> [*]" not in compile_diagram(a, DiagramType.STATE_MACHINE)
+
+
 @pytest.mark.renderer
 @pytest.mark.parametrize("kind", list(DiagramType))
 async def test_real_renderer_all_14_types_across_revisions(kind):
