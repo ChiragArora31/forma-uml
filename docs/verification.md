@@ -16,7 +16,7 @@ Verified locally on **7 October 2026**, using macOS/Brave for UI tests and a Lin
 | Frontend | TypeScript check, production build, Prettier check: passed |
 | Browser | **7 production-server journeys passed**: full review flow, mobile/error handling, locally bundled API docs under the content security policy |
 | Accessibility | Zero axe violations in the scanned welcome, generated workspace, and review dialog views |
-| Vercel hosting | Public production health and real rendering verified; all 3 browser journeys also passed on Vercel with Neon persistence |
+| Vercel hosting | Public production health and real rendering verified; all 7 browser journeys also passed on Vercel with Neon persistence |
 | Container | Image builds with locked dependencies, checksum-verified PlantUML, non-root execution, and local host binding; generation/export smoke test passed |
 | Dependency check | npm audit reported zero vulnerabilities at verification time |
 | Original workspace | Existing `agent-orchestrator` checkout left unchanged |
@@ -31,7 +31,7 @@ Automated accessibility results apply to the specific scanned views; they are no
 
 ## Measured sample-render latency
 
-A fresh pipeline rendering all fourteen curated SEBI views on this machine recorded:
+The original local cold/warm benchmark, before the bundled case-study preload, recorded all fourteen curated SEBI views:
 
 | Run | Design | Rendering | Cache hits |
 | --- | --- | --- | --- |
@@ -42,7 +42,7 @@ Reproduce with `uv run python -m scripts.benchmark` after setup. These are deter
 
 ## External verification limits
 
-**Real Gemini generation was executed** on a dedicated Free-tier project with billing disabled. Generated SEBI and generic document-processing architectures passed strict validation and all fourteen actual PlantUML projections. Hosted live generation is separately checked before final promotion. These observations do not guarantee architectural correctness or unlimited provider availability.
+**Real Gemini generation was executed** on a dedicated Free-tier project with billing disabled. Generated SEBI and generic document-processing architectures passed strict validation and all fourteen actual PlantUML projections. A hosted arbitrary document-processing brief produced 14 verified views in 32.8 seconds (7.9 s design, 24.9 s render), and its live refinement produced four verified views in 22.5 seconds. Both completed on their first model attempt. The real refinement trace contains the previous architecture and saved review. Public exports, PostgreSQL history/reviews, queued ART payloads, and foreign-session denial were checked across the staged and promoted app. The assignment SEBI brief was then verified on the public app in live mode: 14 views in 34.8 s, durable-queue refinement in 15.2 s, and officer-approval refinement in 12.3 s; all three immutable revisions reloaded successfully. These observations do not guarantee architectural correctness or unlimited provider availability.
 
 **No GPU training was executed:** a W&B Training credential/account was not supplied. The ART adapter and durable feedback path are tested; no trained checkpoint or measured model improvement is claimed. The explicit training command requires the configured backend and judge credentials. Promotion of a resulting checkpoint is a separate documented step.
 

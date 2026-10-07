@@ -111,7 +111,7 @@ This is anonymous session isolation, not a full account system. Renderer caches,
 
 ## Hosted-product hardening
 
-Gemini’s function API receives a compatible schema projection. The complete Pydantic bounds and references are still checked locally. Identifier spelling can be normalized to lower snake case, but missing semantic references are never manufactured. Reference errors are collected together so a repair sees all failing categories. Reference fields explain their component/entity boundary in the tool schema, and Gemini repairs restrict known references with enums while preserving the declared identifiers. Domain relations connect entities; service dependencies connect components.
+Gemini’s function API receives a compatible schema projection. The complete Pydantic bounds and references are still checked locally. Identifier spelling can be normalized to lower snake case, but missing semantic references are never manufactured. Reference errors are collected together so a repair sees all failing categories. Incremental instructions preserve prior requirements verbatim and distinguish inferred defaults from requested requirements. Reference fields explain their component/entity boundary in the tool schema, and Gemini repairs restrict known references with enums while preserving the declared identifiers. Domain relations connect entities; service dependencies connect components.
 
 The compiler prefixes private grammar aliases to avoid reserved-word collisions and converts statement separators and comparison operators into safe readable labels. Cyclic component graphs use ordinary directed edges instead of forced lateral ranks. These choices protect arbitrary generated designs as well as curated fixtures.
 

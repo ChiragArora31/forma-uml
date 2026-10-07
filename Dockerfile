@@ -13,6 +13,8 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --python 3.12
 RUN mkdir .tools && curl -fLsS https://github.com/plantuml/plantuml/releases/download/v1.2026.8/plantuml-mit-1.2026.8.jar -o .tools/plantuml.jar && echo '3629c9cd017c7f73e6450396eea0040216c7e1eef8473ce33cc1aad469dab2f9  .tools/plantuml.jar' | sha256sum -c -
 COPY app/ ./app/
+COPY scripts/build_case_study.py ./scripts/build_case_study.py
+RUN .venv/bin/python -m scripts.build_case_study
 COPY --from=ui /build/frontend/dist ./frontend/dist
 RUN useradd --create-home --uid 10001 forma && mkdir .data && chown -R forma:forma /app
 USER forma
