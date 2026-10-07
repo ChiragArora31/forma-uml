@@ -4,7 +4,7 @@ Verified locally on **7 October 2026**, using macOS/Brave for UI tests and a Lin
 
 | Check | Result |
 | --- | --- |
-| Backend suite (`pytest -q`) | **97 passed** |
+| Backend suite (`pytest -q`) | **108 passed** |
 | Actual PlantUML engine | All **14 diagram types**, each across **3 revisions**; 42 successful source/render cases |
 | Schema and safety validation | Unknown references, duplicate IDs, invalid timelines, source injection, active SVG content, invalid syntax, and missing renderer covered |
 | HTTP/session/storage boundaries | Fresh requests, immutable updates, stale-write protection, retry IDs, foreign-session denial, feedback linkage, and ZIP content covered |
@@ -53,3 +53,12 @@ The default no-key sample deliberately remains labelled as curated data. It cann
 The browser suite also covers workspace renaming, archive/undo/restore, saved drafts after reload, mobile history and new-design access, live/case-study selection, starter briefs, recommended/all-view selection, cancellation, canvas keyboard movement and zoom, clipboard copy, exact edited SVG and PNG contents, blank-source validation, source reset, Markdown review briefs, and controlled export failures. The source-export test verifies the PNG file signature and that the SVG contains the edited label. Added dialogs receive axe scans.
 
 Ordinary automated tests use fixture transports rather than live inference. Real provider checks are explicit manual deployment verification, with no paid credits or training purchases. Rendering checks are run without competing Java-heavy jobs to avoid artificial CPU contention.
+
+
+## Reviewer workflow and output refinement
+
+The simplified entry screen, visible Send action with validation guidance, collapsed generation options, and single UML view selector passed all seven production-server browser journeys. Backend checks passed **108 tests** and the disposable PostgreSQL boundary suite passed **37 tests**. The GitHub verification workflow passed for runtime commit `529e17e`.
+
+Real Gemini 3.5 Flash Lite generation with medium reasoning and bounded requirement review was exercised on payments orchestration, document processing, clinic scheduling, and tenant-scoped retrieval. Payments and clinic designs passed the automatic review on their first candidate. Document and retrieval designs exercised reviewed correction; the final reviews reported no missing requirements, critical contradictions, or structural issues. These are model review observations rather than a benchmark or proof of correctness. The document design rendered all 14 actual projections; clinic and retrieval rendered sequence, activity, and lifecycle views. An approval refinement preserved every original document requirement verbatim and rendered those three views.
+
+The staged hosted SEBI brief produced all **14 verified UML views in 30.3 seconds**, including 9.8 seconds for architecture generation and requirement review. Deployment checks also cover refinement, saved feedback, portable exports, and readability of designs from the previous release. Public aliases were pinned to the previous verified deployment throughout staging. Google billing remains disabled; no GPU training or paid provider purchases were performed.
