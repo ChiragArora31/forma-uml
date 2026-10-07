@@ -41,6 +41,24 @@ export interface Architecture {
   assumptions: string[];
   components: Component[];
   connections: { source: string; target: string; label: string; kind: string }[];
+  entities: {
+    id: string;
+    name: string;
+    attributes: { name: string; type: string }[];
+    operations: string[];
+  }[];
+  actors: { name: string; goals: string[] }[];
+  steps: {
+    action: string;
+    owner: string;
+    guard: string | null;
+    alternative: string | null;
+    parallel_actions: string[];
+  }[];
+  states: string[];
+  transitions: { source: string; target: string; event: string; guard: string | null }[];
+  nodes: { name: string; kind: string; components: string[] }[];
+  [key: string]: unknown;
 }
 export interface Diagram {
   type: DiagramKind;
@@ -58,6 +76,7 @@ export interface Revision {
   architecture: Architecture;
   diagrams: Diagram[];
   mode: string;
+  model: string | null;
   created_at: string;
   timings: { design_ms: number; render_ms: number; total_ms: number };
 }
@@ -66,6 +85,11 @@ export interface ConversationSummary {
   title: string;
   latest: number;
   updated_at: string;
+  archived: boolean;
+}
+export interface Allowance {
+  remaining: number;
+  limit: number;
 }
 export interface Conversation extends ConversationSummary {
   revisions: Revision[];

@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  Archive,
   ArrowDownToLine,
+  PanelLeft,
+  Pencil,
+  RotateCcw,
+  FileText,
   ArrowUp,
   ArrowUpRight,
   BookOpen,
@@ -27,14 +33,14 @@ import {
   Workflow,
   X,
 } from 'lucide-react';
-import { api, download, generate } from './api';
+import { api, download, downloadPng, exportFile, generate } from './api';
 import type { GeneratePayload } from './api';
 import type {
+  Allowance,
   Conversation,
   ConversationSummary,
   DiagramKind,
   Feedback,
-  Revision,
   Session,
 } from './types';
 import DiagramCanvas from './DiagramCanvas';
@@ -42,9 +48,12 @@ import WelcomeCanvas from './WelcomeCanvas';
 import HelpGuide from './HelpGuide';
 import DiagramPicker from './DiagramPicker';
 import ReviewForm from './ReviewForm';
+import WorkspaceSettings from './WorkspaceSettings';
+import { revisionChanges } from './changes';
+import { readDraft, saveDraft, readSource, saveSource, STARTERS } from './workspace';
 
 type View = 'diagram' | 'source' | 'notes' | 'compare';
-type Modal = 'diagrams' | 'review' | 'help' | null;
+type Modal = 'diagrams' | 'review' | 'help' | 'manage' | 'workspace' | 'starters' | null;
 const DEFAULT_TYPES: DiagramKind[] = ['sequence', 'component'];
 
 function Mark({ small = false }: { small?: boolean }) {
@@ -59,44 +68,10 @@ function Mark({ small = false }: { small?: boolean }) {
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
-function revisionChanges(previous: Revision, current: Revision) {
-  const before = new Map(previous.architecture.components.map((c) => [c.id, c]));
-  const after = new Map(current.architecture.components.map((c) => [c.id, c]));
-  const entries = [...after.values()]
-    .filter((c) => !before.has(c.id))
-    .map((c) => ({ status: 'Added', name: c.name, detail: c.responsibility }));
-  for (const c of before.values())
-    if (!after.has(c.id))
-      entries.push({ status: 'Removed', name: c.name, detail: c.responsibility });
-  for (const c of after.values())
-    if (before.has(c.id) && JSON.stringify(c) !== JSON.stringify(before.get(c.id)))
-      entries.push({ status: 'Changed', name: c.name, detail: c.responsibility });
-  for (const r of current.architecture.requirements)
-    if (!previous.architecture.requirements.includes(r))
-      entries.push({ status: 'Added', name: 'Requirement', detail: r });
-  for (const r of previous.architecture.requirements)
-    if (!current.architecture.requirements.includes(r))
-      entries.push({ status: 'Removed', name: 'Requirement', detail: r });
-  const connectionKey = (c: Revision['architecture']['connections'][number]) => JSON.stringify(c);
-  for (const c of current.architecture.connections)
-    if (!previous.architecture.connections.some((p) => connectionKey(p) === connectionKey(c)))
-      entries.push({
-        status: 'Added',
-        name: 'Connection',
-        detail: `${c.source} → ${c.target}: ${c.label}`,
-      });
-  for (const c of previous.architecture.connections)
-    if (!current.architecture.connections.some((p) => connectionKey(p) === connectionKey(c)))
-      entries.push({
-        status: 'Removed',
-        name: 'Connection',
-        detail: `${c.source} → ${c.target}: ${c.label}`,
-      });
-  return entries;
-}
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [revisionIndex, setRevisionIndex] = useState(-1);
@@ -107,19 +82,36 @@ export default function App() {
   const [modal, setModal] = useState<Modal>(null);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState('');
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState('');
-  const [toast, setToast] = useState('');
+  const [toast, setToastMessage] = useState('');
+  const [toastTone, setToastTone] = useState<'success' | 'info' | 'error'>('success');
+  function setToast(message: string, tone: 'success' | 'info' | 'error' = 'success') {
+    setToastMessage(message);
+    setToastTone(tone);
+  }
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState('');
+  const [archived, setArchived] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [requestMode, setRequestMode] = useState<'sample' | 'live'>('sample');
+  const [allowance, setAllowance] = useState<Allowance | null>(null);
+  const [undoArchive, setUndoArchive] = useState<string | null>(null);
   const [source, setSource] = useState('');
   const [sourcePreview, setSourcePreview] = useState<string | null>(null);
   const [sourceBusy, setSourceBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   const [sourceError, setSourceError] = useState('');
-  const [reviewBusy, setReviewBusy] = useState(false);
+  const [modalBusy, setModalBusy] = useState(false);
   const [reviews, setReviews] = useState<Feedback[]>([]);
   const [bootError, setBootError] = useState('');
   const controller = useRef<AbortController | null>(null);
   const pending = useRef<{ payload: GeneratePayload; prompt: string } | null>(null);
+  const sourceController = useRef<AbortController | null>(null);
+  const openController = useRef<AbortController | null>(null);
+  const listController = useRef<AbortController | null>(null);
+  const archivedRef = useRef(archived);
+  archivedRef.current = archived;
   const feed = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const modalRef = useRef<HTMLDialogElement>(null);
@@ -128,24 +120,108 @@ export default function App() {
   const label = (k: DiagramKind) => session?.diagram_types.find((d) => d.id === k)?.label ?? k;
 
   const refresh = useCallback(async () => {
-    setConversations(await api<ConversationSummary[]>('/conversations'));
+    listController.current?.abort();
+    const abort = new AbortController();
+    listController.current = abort;
+    try {
+      const items = await api<ConversationSummary[]>(
+        `/conversations?archived=${archivedRef.current}`,
+        { signal: abort.signal },
+      );
+      if (!abort.signal.aborted) setConversations(items);
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') throw e;
+    }
   }, []);
+  const previous =
+    conversation && revisionIndex > 0 ? conversation.revisions[revisionIndex - 1] : null;
+  const changes = useMemo(
+    () => (previous && revision ? revisionChanges(previous, revision) : []),
+    [previous, revision],
+  );
+  function restoreDraft(c: Conversation | null, currentSession: Session) {
+    const d = readDraft(c?.id ?? 'new');
+    setPrompt(d?.prompt ?? '');
+    const validTypes =
+      d?.types.filter((t) => currentSession.diagram_types.some((k) => k.id === t)) ?? [];
+    setTypes(
+      validTypes.length
+        ? validTypes
+        : (c?.revisions.at(-1)?.diagrams.map((d) => d.type) ?? DEFAULT_TYPES),
+    );
+    setRequestMode(
+      currentSession.mode === 'sample'
+        ? 'sample'
+        : c?.revisions.at(-1)?.mode === 'live'
+          ? 'live'
+          : (d?.mode ?? (c?.revisions.at(-1)?.mode === 'sample' ? 'sample' : 'live')),
+    );
+    pending.current = d?.pending ? { payload: d.pending, prompt: d.prompt } : null;
+  }
   useEffect(() => {
     let alive = true;
-    api<Session>('/session')
-      .then(async (s) => {
+    const abort = new AbortController();
+    void api<Session>('/session', { signal: abort.signal })
+      .then(async (current) => {
         if (!alive) return;
-        setSession(s);
-        await refresh();
+        setSession(current);
+        const [items, available] = await Promise.all([
+          api<ConversationSummary[]>('/conversations', { signal: abort.signal }),
+          api<Allowance>('/allowance', { signal: abort.signal }),
+        ]);
+        if (!alive) return;
+        setConversations(items);
+        setAllowance(available);
+        const id = location.hash.match(/^#design\/([0-9a-f-]{36})$/)?.[1];
+        if (id) {
+          try {
+            const c = await api<Conversation>(`/conversations/${id}`, { signal: abort.signal });
+            if (!alive) return;
+            setConversation(c);
+            setRevisionIndex(c.revisions.length - 1);
+            restoreDraft(c, current);
+          } catch (e) {
+            if (alive) {
+              setError(
+                'This design is unavailable in this browser. Open a saved design or start a new one.',
+              );
+              restoreDraft(null, current);
+            }
+          }
+        } else restoreDraft(null, current);
+        if (alive) setHydrated(true);
       })
       .catch((e) => {
-        if (alive) setBootError(e.message);
+        if (alive && e.name !== 'AbortError') setBootError(e.message);
       });
     return () => {
       alive = false;
+      abort.abort();
       controller.current?.abort();
+      sourceController.current?.abort();
+      openController.current?.abort();
     };
-  }, [refresh]);
+  }, []);
+  useEffect(() => {
+    if (session && hydrated) void refresh().catch((e) => setError(e.message));
+  }, [archived, refresh, session, hydrated]);
+  useEffect(() => {
+    if (!session || !hydrated) return;
+    const id = conversation?.id ?? 'new';
+    const timer = setTimeout(
+      () => saveDraft(id, { prompt, types, mode: requestMode, pending: pending.current?.payload }),
+      200,
+    );
+    return () => clearTimeout(timer);
+  }, [prompt, types, requestMode, conversation?.id, session, busy, hydrated]);
+  useEffect(() => {
+    if (!session || !hydrated) return;
+    history.replaceState(
+      null,
+      '',
+      conversation ? '#design/' + conversation.id : location.pathname + location.search,
+    );
+  }, [conversation?.id, session, hydrated]);
   useEffect(() => {
     if (toast) {
       const t = setTimeout(() => setToast(''), 4000);
@@ -156,10 +232,15 @@ export default function App() {
     feed.current?.scrollTo({ top: feed.current.scrollHeight, behavior: 'smooth' });
   }, [conversation, busy, phase]);
   useEffect(() => {
-    setSource(diagram?.source ?? '');
+    sourceController.current?.abort();
+    sourceController.current = null;
+    setSourceBusy(false);
+    setSource(
+      diagram && revision ? readSource(`${revision.id}:${diagram.type}`, diagram.source) : '',
+    );
     setSourcePreview(null);
     setSourceError('');
-  }, [diagram]);
+  }, [revision?.id, diagram?.type]);
   useEffect(() => {
     let alive = true;
     setReviews([]);
@@ -172,7 +253,7 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [revision]);
+  }, [revision?.id]);
   useEffect(() => {
     const dialog = modalRef.current;
     if (modal && dialog && !dialog.open) dialog.showModal();
@@ -180,28 +261,78 @@ export default function App() {
   }, [modal]);
   useEffect(() => {
     function escape(e: KeyboardEvent) {
+      if (modalRef.current?.open) return;
       if (e.key === 'Escape') setExpanded(false);
+      if (e.key === 'Tab' && expanded) {
+        const panel = document.querySelector<HTMLElement>('.artifact-panel.expanded');
+        const focusable = Array.from(
+          panel?.querySelectorAll<HTMLElement>('button, a, select, textarea, [tabindex]') ?? [],
+        ).filter(
+          (el) => el.tabIndex >= 0 && !el.hasAttribute('disabled') && el.offsetParent !== null,
+        );
+        const first = focusable[0],
+          last = focusable.at(-1);
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
     }
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
-  }, []);
+  }, [expanded]);
+  useEffect(() => {
+    if (!busy) return;
+    const start = performance.now();
+    setElapsed(0);
+    const timer = setInterval(
+      () => setElapsed(Math.floor((performance.now() - start) / 1000)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [busy]);
 
   function reset() {
     if (busy) return;
+    saveDraft(conversation?.id ?? 'new', {
+      prompt,
+      types,
+      mode: requestMode,
+      pending: pending.current?.payload,
+    });
+    openController.current?.abort();
+    openController.current = null;
+    setOpening(false);
     setConversation(null);
     setRevisionIndex(-1);
     setPrompt('');
     setError('');
     setView('diagram');
     setTypes(DEFAULT_TYPES);
+    setRequestMode(session?.mode ?? 'sample');
+    setExpanded(false);
     setKind('component');
     pending.current = null;
     textarea.current?.focus();
   }
   async function openConversation(id: string) {
     if (busy) return;
+    saveDraft(conversation?.id ?? 'new', {
+      prompt,
+      types,
+      mode: requestMode,
+      pending: pending.current?.payload,
+    });
+    openController.current?.abort();
+    const abort = new AbortController();
+    openController.current = abort;
+    setOpening(true);
     try {
-      const c = await api<Conversation>(`/conversations/${id}`);
+      const c = await api<Conversation>(`/conversations/${id}`, { signal: abort.signal });
+      if (abort.signal.aborted) return;
       setConversation(c);
       setRevisionIndex(c.revisions.length - 1);
       setTypes(c.revisions.at(-1)!.diagrams.map((d) => d.type));
@@ -212,19 +343,38 @@ export default function App() {
       );
       setView('diagram');
       setError('');
-      setPrompt('');
-      pending.current = null;
+      if (session) restoreDraft(c, session);
+      setExpanded(false);
     } catch (e) {
-      setError((e as Error).message);
+      if ((e as Error).name !== 'AbortError') setError((e as Error).message);
+    } finally {
+      if (openController.current === abort) {
+        openController.current = null;
+        setOpening(false);
+      }
     }
   }
-  async function send(override?: string, overrideTypes?: DiagramKind[]) {
+  async function send(
+    override?: string,
+    overrideTypes?: DiagramKind[],
+    modeOverride?: 'sample' | 'live',
+  ) {
     const input = (override ?? prompt).trim();
     const selectedTypes = overrideTypes ?? types;
-    if (!session || busy || input.length < 10 || !selectedTypes.length) return;
+    const mode = modeOverride ?? requestMode;
+    if (
+      !session ||
+      busy ||
+      opening ||
+      input.length < 10 ||
+      !selectedTypes.length ||
+      conversation?.archived
+    )
+      return;
     const latest = conversation?.revisions.at(-1);
     const draft: GeneratePayload = {
       prompt: input,
+      mode,
       diagram_types: selectedTypes,
       ...(conversation ? { conversation_id: conversation.id, base_revision: latest!.number } : {}),
       request_id: crypto.randomUUID(),
@@ -234,11 +384,19 @@ export default function App() {
     const same =
       old &&
       old.prompt === draft.prompt &&
+      old.mode === draft.mode &&
       old.conversation_id === draft.conversation_id &&
       old.base_revision === draft.base_revision &&
       old.diagram_types.join() === draft.diagram_types.join();
     const payload = same ? old : draft;
     pending.current = { payload, prompt: input };
+    saveDraft(conversation?.id ?? 'new', {
+      prompt: input,
+      types: selectedTypes,
+      mode,
+      pending: payload,
+    });
+    setRequestMode(mode);
     if (override) setPrompt(input);
     controller.current = new AbortController();
     setBusy(true);
@@ -250,6 +408,8 @@ export default function App() {
       setConversation(c);
       setRevisionIndex(c.revisions.findIndex((r) => r.id === result.id));
       setPrompt('');
+      saveDraft(conversation?.id ?? 'new', { prompt: '', types: selectedTypes, mode });
+      saveDraft(c.id, { prompt: '', types: selectedTypes, mode });
       setTypes(selectedTypes);
       setKind(result.diagrams.some((d) => d.type === kind) ? kind : result.diagrams[0].type);
       setView('diagram');
@@ -265,23 +425,65 @@ export default function App() {
       setBusy(false);
       setPhase('');
       controller.current = null;
+      void api<Allowance>('/allowance')
+        .then(setAllowance)
+        .catch(() => undefined);
     }
   }
   async function validateSource() {
+    sourceController.current?.abort();
+    const abort = new AbortController();
+    sourceController.current = abort;
     setSourceBusy(true);
     setSourceError('');
     try {
       const r = await api<{ svg: string }>('/render', {
         method: 'POST',
+        signal: abort.signal,
         body: JSON.stringify({ source }),
       });
+      if (sourceController.current !== abort) return;
       setSourcePreview(r.svg);
       setToast('Syntax checked. This is a local preview; the saved revision is unchanged.');
     } catch (e) {
-      setSourceError((e as Error).message);
-      setSourcePreview(null);
+      if ((e as Error).name !== 'AbortError' && sourceController.current === abort) {
+        setSourceError((e as Error).message);
+        setSourcePreview(null);
+      }
     } finally {
-      setSourceBusy(false);
+      if (sourceController.current === abort) {
+        setSourceBusy(false);
+        sourceController.current = null;
+      }
+    }
+  }
+  async function takeExport(format: 'zip' | 'report' | 'png') {
+    if (!revision || !diagram || exportBusy) return;
+    setExportBusy(true);
+    try {
+      if (format === 'png')
+        await downloadPng(
+          sourcePreview ?? diagram.svg,
+          `${diagram.type}${sourcePreview ? '-preview' : ''}.png`,
+        );
+      else
+        await exportFile(
+          `/revisions/${revision.id}/${format === 'zip' ? 'export' : 'report'}`,
+          format === 'zip'
+            ? `forma-revision-${revision.number}.zip`
+            : `forma-review-v${revision.number}.md`,
+        );
+      setToast(
+        format === 'zip'
+          ? 'Export ready: diagrams, editable source, the design brief, and reviews.'
+          : format === 'png'
+            ? 'PNG exported at up to 2× resolution.'
+            : 'Design review brief exported.',
+      );
+    } catch (e) {
+      setToast((e as Error).message, 'error');
+    } finally {
+      setExportBusy(false);
     }
   }
   async function copySource() {
@@ -289,8 +491,33 @@ export default function App() {
       await navigator.clipboard.writeText(source);
       setToast('PlantUML source copied');
     } catch {
-      setToast('Clipboard unavailable. Use the source download instead.');
+      setToast('Clipboard unavailable. Use the source download instead.', 'info');
     }
+  }
+  async function restoreArchived(id: string) {
+    try {
+      const c = await api<Conversation>(`/conversations/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ archived: false }),
+      });
+      setArchived(false);
+      setUndoArchive(null);
+      setConversation(c);
+      setRevisionIndex(c.revisions.length - 1);
+      if (session) restoreDraft(c, session);
+      setToast('Design restored. All revisions are ready to explore.');
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  function startBrief(brief: string) {
+    modalRef.current?.close();
+    setModal(null);
+    setPrompt(brief);
+    setRequestMode('live');
+    textarea.current?.focus();
+    textarea.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   function openReview() {
     setModal('review');
@@ -307,7 +534,7 @@ export default function App() {
         </button>
       </div>
     );
-  if (!session)
+  if (!session || !hydrated)
     return (
       <div className="boot-error">
         <Mark />
@@ -315,8 +542,6 @@ export default function App() {
         <p>Opening your workspace…</p>
       </div>
     );
-  const previous =
-    conversation && revisionIndex > 0 ? conversation.revisions[revisionIndex - 1] : null;
   const isHistoric = conversation && revisionIndex < conversation.revisions.length - 1;
 
   return (
@@ -340,7 +565,7 @@ export default function App() {
           <Plus size={17} /> New design <span>↗</span>
         </button>
         <div className="sidebar-section-title">
-          <span>YOUR WORKSPACE</span>
+          <span>{archived ? 'ARCHIVED DESIGNS' : 'YOUR WORKSPACE'}</span>
           <span>{conversations.length.toString().padStart(2, '0')}</span>
         </div>
         <label className="search-field">
@@ -352,12 +577,24 @@ export default function App() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
+        <button
+          className="archive-toggle"
+          onClick={() => {
+            setArchived((v) => !v);
+            setQuery('');
+          }}
+        >
+          <Archive size={13} />
+          {archived ? 'Back to active designs' : 'Show archived designs'}
+        </button>
         <nav className="design-list" aria-label="Saved designs">
           {conversations
             .filter((c) => c.title.toLowerCase().includes(query.toLowerCase()))
             .map((c) => (
               <button
                 key={c.id}
+                aria-label={`${c.title} ${c.latest} revision${c.latest === 1 ? '' : 's'}`}
+                title={c.title}
                 className={`design-item ${conversation?.id === c.id ? 'active' : ''}`}
                 onClick={() => openConversation(c.id)}
                 disabled={busy}
@@ -373,11 +610,21 @@ export default function App() {
             ))}
           {!conversations.length && (
             <p className="empty-history">
-              Your designs will live here.
+              {archived ? 'No archived designs.' : 'Your designs will live here.'}
               <br />
-              Start with a brief below.
+              {archived
+                ? 'Keep only what you need in your workspace.'
+                : 'Start with a brief below.'}
             </p>
           )}
+          {query &&
+            conversations.length > 0 &&
+            !conversations.some((c) => c.title.toLowerCase().includes(query.toLowerCase())) && (
+              <p className="empty-history">
+                No designs match “{query}”.
+                <button onClick={() => setQuery('')}>Clear search</button>
+              </p>
+            )}
         </nav>
         <div className="sidebar-bottom">
           <button className="guide-link" onClick={() => setModal('help')}>
@@ -391,7 +638,7 @@ export default function App() {
               <strong>
                 {session.storage === 'postgres' ? 'Your design workspace' : 'Your local workspace'}
               </strong>
-              <small>Saved for this browser session</small>
+              <small>Private to this browser · drafts saved</small>
             </div>
           </div>
         </div>
@@ -399,15 +646,34 @@ export default function App() {
 
       <main className="main-shell">
         <header className="topbar">
+          <button
+            className="icon-button mobile-workspace"
+            aria-label="Open workspace"
+            onClick={() => setModal('workspace')}
+          >
+            <PanelLeft size={19} />
+          </button>
           <div className="breadcrumb">
             <span>Workspace</span>
             <ChevronRight size={13} />
-            <strong>{revision?.architecture.title ?? 'Untitled design'}</strong>
+            <strong>
+              {opening ? 'Opening design…' : (conversation?.title ?? 'Untitled design')}
+            </strong>
           </div>
           <div className="top-actions">
+            {conversation && (
+              <button
+                className="icon-button"
+                aria-label="Design settings"
+                disabled={busy}
+                onClick={() => setModal('manage')}
+              >
+                <Pencil size={16} />
+              </button>
+            )}
             <span className="mode-indicator">
               <i />
-              {session.mode === 'sample' ? 'Sample mode' : 'Live generation'}
+              {session.mode === 'sample' ? 'Case study available' : 'Live AI available'}
             </span>
             <button
               className="icon-button"
@@ -461,6 +727,18 @@ export default function App() {
                   >
                     Use the assignment brief <ArrowUpRight size={15} />
                   </button>
+                  {session.mode === 'live' && (
+                    <div className="starter-briefs">
+                      <span className="tiny-label">OR START WITH A DIFFERENT SYSTEM</span>
+                      {STARTERS.map((starter) => (
+                        <button key={starter.title} onClick={() => startBrief(starter.prompt)}>
+                          <span>{starter.category}</span>
+                          {starter.title}
+                          <ArrowUpRight size={13} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               {conversation?.revisions.map((r, i) => (
@@ -516,9 +794,9 @@ export default function App() {
                   <div>
                     <strong>{phase}</strong>
                     <small>
-                      {session.mode === 'sample'
-                        ? 'Rendering the curated case study with PlantUML'
-                        : 'One shared design. Consistent views.'}
+                      {requestMode === 'sample'
+                        ? 'Opening a verified case study'
+                        : `${types.length} views from one shared architecture · ${elapsed}s elapsed`}
                     </small>
                   </div>
                   <button aria-label="Stop generation" onClick={() => controller.current?.abort()}>
@@ -537,10 +815,10 @@ export default function App() {
                   )}
                 </div>
               )}
-              {revision && !busy && (
+              {revision && !busy && !conversation?.archived && (
                 <div className="next-steps">
                   <span className="tiny-label">KEEP THE DESIGN MOVING</span>
-                  {session.mode === 'sample' ? (
+                  {revision.mode === 'sample' ? (
                     session.sample_updates.map((p, i) => (
                       <button
                         key={p}
@@ -565,6 +843,45 @@ export default function App() {
               )}
             </div>
             <div className="composer-area">
+              {conversation?.archived ? (
+                <div className="archived-banner">
+                  <Archive size={16} />
+                  <span>This design is archived. Its history is preserved.</span>
+                  <button onClick={() => void restoreArchived(conversation.id)}>
+                    <RotateCcw size={13} />
+                    Restore
+                  </button>
+                </div>
+              ) : session.mode === 'live' ? (
+                <div className="generation-choice">
+                  <div role="group" aria-label="Generation mode">
+                    <button
+                      aria-pressed={requestMode === 'live'}
+                      disabled={busy}
+                      onClick={() => setRequestMode('live')}
+                    >
+                      Live AI
+                    </button>
+                    <button
+                      aria-pressed={requestMode === 'sample'}
+                      disabled={busy || conversation?.revisions.at(-1)?.mode === 'live'}
+                      title={
+                        conversation?.revisions.at(-1)?.mode === 'live'
+                          ? 'Start a new design to explore the curated case study'
+                          : 'Use the curated SEBI workflow'
+                      }
+                      onClick={() => setRequestMode('sample')}
+                    >
+                      Case study
+                    </button>
+                  </div>
+                  <span>
+                    {requestMode === 'live'
+                      ? `${allowance?.remaining ?? '…'} AI attempts available today`
+                      : 'Instant curated examples · no AI quota used'}
+                  </span>
+                </div>
+              ) : null}
               {isHistoric && (
                 <p className="historic-note">
                   <History size={12} /> Viewing v{revision!.number}. New requests update v
@@ -599,7 +916,7 @@ export default function App() {
                   value={prompt}
                   maxLength={12000}
                   onChange={(e) => setPrompt(e.target.value)}
-                  disabled={busy}
+                  disabled={busy || !!conversation?.archived || opening}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                       e.preventDefault();
@@ -611,12 +928,19 @@ export default function App() {
                   <span>
                     {prompt.length
                       ? `${prompt.length.toLocaleString()} / 12,000`
-                      : 'A clear brief goes a long way.'}
+                      : 'Your brief is saved as you type.'}
                   </span>
                   <button
                     className="send-button"
                     aria-label="Send design request"
-                    disabled={busy || prompt.trim().length < 10 || !types.length}
+                    disabled={
+                      busy ||
+                      opening ||
+                      !!conversation?.archived ||
+                      prompt.trim().length < 10 ||
+                      !types.length ||
+                      (requestMode === 'live' && allowance?.remaining === 0)
+                    }
                     onClick={() => void send()}
                   >
                     {busy ? <Loader2 size={17} className="spin" /> : <ArrowUp size={18} />}
@@ -640,7 +964,8 @@ export default function App() {
               <WelcomeCanvas
                 session={session}
                 busy={busy}
-                onStart={() => void send(session.sample_prompt)}
+                onStart={() => void send(session.sample_prompt, types, 'sample')}
+                onCompose={() => setModal('starters')}
               />
             ) : (
               <>
@@ -721,6 +1046,7 @@ export default function App() {
                   role="tabpanel"
                   aria-labelledby={`tab-${diagram?.type}`}
                   tabIndex={0}
+                  aria-busy={sourceBusy}
                 >
                   <div className="canvas-toolbar">
                     <div className="view-switch">
@@ -757,7 +1083,11 @@ export default function App() {
                     <div className="canvas-actions">
                       <span className="validated-pill">
                         <Check size={11} />
-                        Syntax verified
+                        {view === 'source' && source !== diagram?.source
+                          ? sourcePreview
+                            ? 'Preview verified'
+                            : 'Draft · check syntax'
+                          : 'Syntax verified'}
                       </span>
                       <button
                         className="icon-button"
@@ -785,12 +1115,29 @@ export default function App() {
                             <ArrowDownToLine size={13} /> .puml
                           </button>
                           <button
+                            disabled={source !== diagram?.source && !sourcePreview}
+                            title={
+                              source !== diagram?.source && !sourcePreview
+                                ? 'Check the edited source before downloading its SVG'
+                                : 'Download the displayed diagram'
+                            }
                             onClick={() =>
                               diagram &&
-                              download(diagram.svg, `${diagram.type}.svg`, 'image/svg+xml')
+                              download(
+                                sourcePreview ?? diagram.svg,
+                                `${diagram.type}${sourcePreview ? '-preview' : ''}.svg`,
+                                'image/svg+xml',
+                              )
                             }
                           >
                             <ArrowDownToLine size={13} /> .svg
+                          </button>
+                          <button
+                            disabled={exportBusy || (source !== diagram?.source && !sourcePreview)}
+                            onClick={() => void takeExport('png')}
+                          >
+                            <ArrowDownToLine size={13} />
+                            .png
                           </button>
                           <button onClick={copySource}>
                             <Copy size={13} /> Copy
@@ -800,14 +1147,33 @@ export default function App() {
                       <textarea
                         aria-label="PlantUML source editor"
                         spellCheck={false}
+                        disabled={sourceBusy}
                         value={source}
                         onChange={(e) => {
                           setSource(e.target.value);
                           setSourcePreview(null);
+                          if (revision && diagram)
+                            saveSource(`${revision.id}:${diagram.type}`, e.target.value);
                         }}
                       />
                       <div className="source-actions">
-                        <p>Edits are a local preview. Saved revisions stay intact.</p>
+                        <p>
+                          Preview edits are saved in this browser. Generated revisions stay intact.
+                          <button
+                            className="text-link"
+                            onClick={() => {
+                              if (diagram && revision) {
+                                setSource(diagram.source);
+                                saveSource(`${revision.id}:${diagram.type}`, diagram.source);
+                                setSourcePreview(null);
+                                setSourceError('');
+                              }
+                            }}
+                            disabled={sourceBusy || source === diagram?.source}
+                          >
+                            Reset to generated source
+                          </button>
+                        </p>
                         <button
                           className="primary compact"
                           onClick={validateSource}
@@ -838,6 +1204,33 @@ export default function App() {
                       <span className="eyebrow">DESIGN RATIONALE</span>
                       <h2>One model. Many perspectives.</h2>
                       <p>{revision.architecture.summary}</p>
+                      <div className="design-facts">
+                        <div>
+                          <strong>{revision.architecture.components.length}</strong>
+                          <span>system boundaries</span>
+                        </div>
+                        <div>
+                          <strong>{revision.architecture.requirements.length}</strong>
+                          <span>requirements</span>
+                        </div>
+                        <div>
+                          <strong>{revision.architecture.actors.length}</strong>
+                          <span>actor perspectives</span>
+                        </div>
+                        <div>
+                          <strong>{revision.diagrams.length}</strong>
+                          <span>verified views</span>
+                        </div>
+                      </div>
+                      <h3>Actors and goals</h3>
+                      <div className="boundary-list">
+                        {revision.architecture.actors.map((actor) => (
+                          <div key={actor.name}>
+                            <strong>{actor.name}</strong>
+                            <span>{actor.goals.join('; ')}</span>
+                          </div>
+                        ))}
+                      </div>
                       <h3>Requirements covered</h3>
                       <ol>
                         {revision.architecture.requirements.map((r) => (
@@ -866,10 +1259,11 @@ export default function App() {
                       <span className="eyebrow">ITERATION HISTORY</span>
                       <h2>What changed in v{revision.number}?</h2>
                       <p>
-                        Compared with v{previous.number}. Components, requirements, and connections.
+                        Compared with v{previous.number}. A complete comparison across requirements,
+                        boundaries, workflows, domain models, and deployment decisions.
                       </p>
-                      {revisionChanges(previous, revision).length ? (
-                        revisionChanges(previous, revision).map((change, i) => (
+                      {changes.length ? (
+                        changes.map((change, i) => (
                           <div className="change-row" key={i}>
                             <span className={`change-status ${change.status.toLowerCase()}`}>
                               {change.status}
@@ -882,8 +1276,8 @@ export default function App() {
                         ))
                       ) : (
                         <p>
-                          No changes to components, requirements, or connections. Other design
-                          details may have changed; inspect the source and design notes.
+                          The system model is unchanged. Only the requested diagram perspectives may
+                          differ.
                         </p>
                       )}
                     </div>
@@ -891,11 +1285,15 @@ export default function App() {
                   <div className="canvas-status">
                     <span>
                       <span className="status-dot" />
-                      PlantUML · {revision.mode === 'sample' ? 'Curated sample' : session.model} · v
-                      {revision.number}
+                      PlantUML ·{' '}
+                      {revision.mode === 'sample'
+                        ? 'Curated case study'
+                        : (revision.model ?? session.model)}{' '}
+                      · v{revision.number}
                     </span>
                     <span>
-                      {(revision.timings.total_ms / 1000).toFixed(1)}s total{' '}
+                      {(revision.timings.design_ms / 1000).toFixed(1)}s design ·{' '}
+                      {(revision.timings.render_ms / 1000).toFixed(1)}s render{' '}
                       <span className="hint-separator">·</span>{' '}
                       {revision.diagrams.filter((d) => d.cache_hit).length} cached
                     </span>
@@ -910,16 +1308,39 @@ export default function App() {
                       <strong>A better design starts with your perspective.</strong>
                       <span>
                         {reviews.length
-                          ? `${reviews.length} review${reviews.length === 1 ? '' : 's'} saved · ART ${reviews.at(-1)!.training_status}`
+                          ? `${reviews.length} review${reviews.length === 1 ? '' : 's'} saved · linked to this revision`
                           : 'Share a review to guide the next iteration.'}
                       </span>
                     </div>
                   </div>
                   <div className="footer-buttons">
+                    <a
+                      className="report-link"
+                      aria-label="Download design review brief"
+                      href={`/api/revisions/${revision.id}/report`}
+                      aria-disabled={exportBusy}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void takeExport('report');
+                      }}
+                      download
+                    >
+                      <FileText size={15} />
+                      <span>Review brief</span>
+                    </a>
                     <button className="secondary" onClick={openReview}>
                       Review design
                     </button>
-                    <a className="primary" href={`/api/revisions/${revision.id}/export`} download>
+                    <a
+                      className="primary"
+                      href={`/api/revisions/${revision.id}/export`}
+                      download
+                      aria-disabled={exportBusy}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void takeExport('zip');
+                      }}
+                    >
                       <ArrowDownToLine size={15} />
                       Export ZIP
                     </a>
@@ -939,9 +1360,20 @@ export default function App() {
         </footer>
       </main>
       {toast && (
-        <div className="toast" role="status">
-          <Check size={16} />
+        <div className={`toast toast-${toastTone}`} role="status">
+          {toastTone === 'error' ? (
+            <AlertCircle size={16} />
+          ) : toastTone === 'info' ? (
+            <CircleHelp size={16} />
+          ) : (
+            <Check size={16} />
+          )}
           {toast}
+          {undoArchive && (
+            <button className="toast-action" onClick={() => void restoreArchived(undoArchive)}>
+              Undo archive
+            </button>
+          )}
           <button aria-label="Dismiss notification" onClick={() => setToast('')}>
             <X size={14} />
           </button>
@@ -953,10 +1385,10 @@ export default function App() {
         className={`modal ${modal === 'diagrams' ? 'catalog-modal' : ''}`}
         onCancel={(event) => {
           event.preventDefault();
-          if (!reviewBusy) setModal(null);
+          if (!modalBusy) setModal(null);
         }}
         onClick={(e) => {
-          if (e.target === modalRef.current && !reviewBusy) setModal(null);
+          if (e.target === modalRef.current && !modalBusy) setModal(null);
         }}
       >
         <div className="modal-inner">
@@ -964,7 +1396,7 @@ export default function App() {
             className="modal-close icon-button"
             aria-label="Close dialog"
             onClick={() => setModal(null)}
-            disabled={reviewBusy}
+            disabled={modalBusy}
           >
             <X size={19} />
           </button>
@@ -981,7 +1413,7 @@ export default function App() {
               key={revision.id}
               revision={revision}
               catalog={session.diagram_types}
-              onBusy={setReviewBusy}
+              onBusy={setModalBusy}
               onReviewed={(review) => {
                 setReviews((previous) => [
                   ...previous.filter((item) => item.id !== review.id),
@@ -989,10 +1421,112 @@ export default function App() {
                 ]);
                 setModal(null);
                 setToast(
-                  'Review saved and queued for ART. It will also inform your next live revision.',
+                  revision.mode === 'sample'
+                    ? 'Review saved with this case-study revision.'
+                    : 'Review saved. It will guide your next refinement.',
                 );
               }}
             />
+          )}
+          {modal === 'starters' && (
+            <>
+              <span className="eyebrow">START WITH AN IDEA</span>
+              <h2 id="modal-title">What would you like to map?</h2>
+              <p>Pick a useful starting brief, then make it your own before generating.</p>
+              <div className="starter-options">
+                {STARTERS.map((starter, i) => (
+                  <button
+                    className="starter-card"
+                    key={starter.title}
+                    onClick={() => startBrief(starter.prompt)}
+                  >
+                    <span>{starter.category}</span>
+                    <strong>{starter.title}</strong>
+                    <p>
+                      {
+                        [
+                          'Idempotency, verified events, and a clear reconciliation boundary.',
+                          'Retrieval, safe tool access, and a thoughtful human handoff.',
+                          'Private uploads, durable processing, and confident review.',
+                        ][i]
+                      }
+                    </p>
+                  </button>
+                ))}
+              </div>
+              <button className="secondary" onClick={() => startBrief('')}>
+                Write my own brief
+                <ArrowUpRight size={14} />
+              </button>
+            </>
+          )}
+          {modal === 'manage' && conversation && (
+            <WorkspaceSettings
+              conversation={conversation}
+              onBusy={setModalBusy}
+              onSaved={(c, wasArchived) => {
+                setModal(null);
+                if (wasArchived) {
+                  setUndoArchive(c.id);
+                  reset();
+                  setToast('Design archived. Every revision is preserved.');
+                } else {
+                  setConversation(c);
+                  setToast('Workspace updated.');
+                }
+                void refresh().catch((e) => setError(e.message));
+              }}
+            />
+          )}
+          {modal === 'workspace' && (
+            <>
+              <span className="eyebrow">YOUR WORKSPACE</span>
+              <h2 id="modal-title">Pick up where you left off.</h2>
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() => {
+                  setModal(null);
+                  reset();
+                }}
+              >
+                <Plus size={15} />
+                New design
+              </button>
+              <label className="form-label">
+                Find a design
+                <input value={query} onChange={(e) => setQuery(e.target.value)} />
+              </label>
+              <button className="archive-toggle" onClick={() => setArchived((v) => !v)}>
+                <Archive size={13} />
+                {archived ? 'Show active designs' : 'Show archived designs'}
+              </button>
+              <div className="mobile-design-list">
+                {conversations
+                  .filter((c) => c.title.toLowerCase().includes(query.toLowerCase()))
+                  .map((c) => (
+                    <button
+                      key={c.id}
+                      className="design-item"
+                      aria-label={`${c.title} ${c.latest} revision${c.latest === 1 ? '' : 's'}`}
+                      disabled={busy}
+                      onClick={() => {
+                        setModal(null);
+                        void openConversation(c.id);
+                      }}
+                    >
+                      <Workflow size={16} />
+                      <span>
+                        <strong>{c.title}</strong>
+                        <small>{c.latest} revisions</small>
+                      </span>
+                      <ArrowUpRight size={14} />
+                    </button>
+                  ))}
+                {!conversations.filter((c) => c.title.toLowerCase().includes(query.toLowerCase()))
+                  .length && <p>No designs here yet.</p>}
+              </div>
+            </>
           )}
           {modal === 'help' && <HelpGuide session={session} />}
         </div>

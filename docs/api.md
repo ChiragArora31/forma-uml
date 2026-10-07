@@ -1,18 +1,21 @@
 # API reference
 
-Interactive documentation is at **`/docs`** when the API runs. Most routes require the anonymous session cookie issued by `GET /api/session`. Mutations also require `X-Forma-Request: 1`. A session cookie is a bearer capability for that local workspace; do not share it.
+Interactive documentation is at **`/docs`** when the API runs. Most routes require the anonymous session cookie issued by `GET /api/session`. Mutations also require `X-Forma-Request: 1`. A session cookie is a bearer capability for that browser workspace; do not share it.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | `/api/session` | Create/reuse session; return mode, catalog, sample brief and updates |
-| GET | `/api/health` | App mode and renderer jar availability |
-| GET | `/api/conversations` | List this session's designs |
+| GET | `/api/health` | Readiness of database schema, Java/Graphviz, and renderer jar |
+| GET | `/api/conversations` | List this session's active designs; `?archived=true` lists archives |
 | GET | `/api/conversations/{id}` | Complete versioned conversation |
+| PATCH | `/api/conversations/{id}` | Rename or reversibly archive a session-owned design |
+| GET | `/api/allowance` | Remaining free live-generation attempts |
+| GET | `/api/revisions/{id}/report` | Standalone Markdown design-review brief |
 | POST | `/api/generate` | Generate and commit a complete revision; SSE result |
 | POST | `/api/render` | Validate edited source and return a local SVG preview |
 | POST | `/api/feedback` | Save feedback and training outbox atomically |
 | GET | `/api/revisions/{id}/feedback` | Reviews and training status for this session's revision |
-| GET | `/api/revisions/{id}/export` | ZIP of saved diagram sources, SVGs, design model, metadata |
+| GET | `/api/revisions/{id}/export` | ZIP of sources, SVGs, model, metadata, design-review brief, and review snapshot |
 
 ## Minimum generation request
 
@@ -25,6 +28,8 @@ curl -N -b /tmp/forma-session \
 ```
 
 Use live mode for this arbitrary example. Sample mode accepts the SEBI brief returned by `/api/session`.
+
+Optional `mode` is `live` or `sample`; omission uses the server default. On a live server, `sample` explicitly selects the curated SEBI fixture without a model call. Curated refinements cannot be applied to an existing live design.
 
 Optional `request_id` is a UUID; the server supplies one if omitted. The UI always supplies one so a repeated action can return the original result without duplicating it. A reused ID with different request contents fails with 409. Diagram aliases: `sequential` → `sequence`, `state` → `state_machine`, and `usecase` → `use_case`; duplicate normalized types are removed.
 
@@ -59,6 +64,8 @@ event: complete
 data: {"id":"…","conversation_id":"…","number":1,"architecture":{…},"diagrams":[…],"timings":{…}}
 ```
 
+An `event: heartbeat` is sent during longer work to keep the connection alive.
+
 Boundary errors before streaming use normal HTTP codes. A runtime failure after response headers have been sent uses `event: error` with `message` and `request_id`; the client must inspect events rather than interpret HTTP 200 as success. A completion means all requested views were validated and the revision transaction committed. A disconnect can occur after commit; retry the exact same request ID or reopen the conversation.
 
 ## Feedback
@@ -84,3 +91,9 @@ The returned `training_status` initially reads `queued`. The feedback is durable
 ```
 
 Successful previews return `{ "svg": "…", "validated": true, "cache_hit": false }`. Validation/unsafe source errors return HTTP 422. Includes, macros, URLs in diagram links, and active embeds are disabled. This route does not modify a saved revision.
+
+## Workspace management
+
+`PATCH /api/conversations/{id}` accepts `{ "title": "My design" }` or `{ "archived": true }`; restore with `{ "archived": false }`. The session owner and mutation header are enforced. A workspace rename persists across generation without rewriting a blueprint’s original title. Archiving retains all revisions and feedback; restore before adding a revision.
+
+Live attempts reserve a shared daily allowance before model work. Completed idempotent replays and sample requests do not reserve another attempt. Failures retain the draft but conservatively consume the reserved attempt. Read `/api/allowance` before offering new live work.

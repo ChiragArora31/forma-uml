@@ -107,6 +107,8 @@ test('mobile layout, keyboard dialog control, and honest sample-mode errors', as
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).not.toBeVisible();
+  if (await page.getByRole('button', { name: 'Case study', exact: true }).isVisible())
+    await page.getByRole('button', { name: 'Case study', exact: true }).click();
   await page
     .getByLabel('Describe your software design')
     .fill('Build a bookstore with checkout and payments');

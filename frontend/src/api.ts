@@ -1,17 +1,63 @@
 import type { DiagramKind, Revision } from './types';
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
+async function responseError(response: Response) {
+  const payload = await response.json().catch(() => null);
+  const fallback =
+    response.status >= 500
+      ? 'The service is taking a moment to recover. Your saved work is safe; please retry.'
+      : 'Please check the request and try again.';
+  return new ApiError(
+    typeof payload?.detail === 'string' ? payload.detail : fallback,
+    response.status,
+  );
+}
+export async function exportFile(path: string, name: string) {
+  const response = await fetch(`/api${path}`);
+  if (!response.ok) throw await responseError(response);
+  downloadBlob(await response.blob(), name);
+}
+export function downloadBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+export async function downloadPng(svg: string, name: string) {
+  const image = new Image();
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  await image.decode();
+  const scale = Math.min(2, 4096 / image.naturalWidth, 4096 / image.naturalHeight);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(image.naturalWidth * scale);
+  canvas.height = Math.ceil(image.naturalHeight * scale);
+  const context = canvas.getContext('2d');
+  if (!context)
+    throw new Error('PNG export is unavailable in this browser. Use SVG or ZIP instead.');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) throw new Error('The image could not be exported. Please use SVG instead.');
+  downloadBlob(blob, name);
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', 'X-Forma-Request': '1', ...init?.headers },
   });
   if (!response.ok) {
-    const error = await response
-      .json()
-      .catch(() => ({ detail: 'The server could not complete this request.' }));
-    throw new Error(
-      typeof error.detail === 'string' ? error.detail : 'Please check the request and try again.',
-    );
+    throw await responseError(response);
   }
   return response.json();
 }
@@ -22,6 +68,7 @@ export interface GeneratePayload {
   conversation_id?: string;
   base_revision?: number;
   request_id: string;
+  mode?: 'sample' | 'live';
 }
 export async function generate(
   payload: GeneratePayload,
@@ -35,8 +82,7 @@ export async function generate(
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    const e = await response.json();
-    throw new Error(typeof e.detail === 'string' ? e.detail : 'The request is invalid.');
+    throw await responseError(response);
   }
   const reader = response.body?.getReader();
   if (!reader) throw new Error('Streaming is unavailable. Please retry.');
@@ -75,10 +121,5 @@ export async function generate(
   return result;
 }
 export function download(content: string, name: string, type: string) {
-  const url = URL.createObjectURL(new Blob([content], { type }));
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadBlob(new Blob([content], { type }), name);
 }

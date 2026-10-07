@@ -1699,7 +1699,7 @@ button:hover:not(:disabled) {
   .sidebar-section-title,
   .search-field,
   .empty-history,
-  .design-item > span,
+  .sidebar .design-item > span,
   .guide-link,
   .local-identity {
     display: none;
@@ -1949,4 +1949,353 @@ button:hover:not(:disabled) {
   border-radius: 5px;
   color: #536647;
   margin-top: 2px;
+}
+
+/* Workspace controls share the studio's paper-and-ink vocabulary. */
+.archive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #66735f;
+  font-size: 11px;
+  margin: 10px 0;
+  padding: 4px 0;
+}
+.empty-history button,
+.text-link {
+  display: block;
+  margin-top: 8px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: #355844;
+  font-size: 11px;
+}
+.mobile-workspace {
+  display: none;
+}
+.generation-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.generation-choice [role='group'] {
+  display: flex;
+  background: #eeeee5;
+  border-radius: 6px;
+  padding: 3px;
+}
+.generation-choice button {
+  padding: 5px 9px;
+  font-size: 11px;
+  border-radius: 4px;
+  color: #66735f;
+}
+.generation-choice button[aria-pressed='true'] {
+  background: #fffef9;
+  color: #294936;
+  box-shadow: 0 1px 3px #27372918;
+}
+.generation-choice > span {
+  font-size: 10px;
+  color: #687263;
+}
+.archived-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6b715f;
+  font-size: 12px;
+  padding: 12px;
+  background: #eeeee5;
+  border-radius: 7px;
+  margin-bottom: 12px;
+}
+.archived-banner button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #315640;
+  text-decoration: underline;
+}
+.starter-briefs {
+  margin-top: 20px;
+  border-top: 1px solid #dddccd;
+  padding-top: 16px;
+}
+.starter-briefs > button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  text-align: left;
+  padding: 10px 0;
+  gap: 8px;
+  border-bottom: 1px solid #e7e5db;
+  font-size: 12px;
+  color: #3c5745;
+}
+.starter-briefs > button > span {
+  display: block;
+  width: 100%;
+  font: 9px var(--mono);
+  letter-spacing: 0.07em;
+  color: #7b806e;
+}
+.starter-briefs svg {
+  margin-left: auto;
+}
+.welcome-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+.welcome-actions .welcome-cta {
+  margin: 0;
+}
+.welcome-live {
+  min-height: 42px;
+}
+.form-label input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #c8d0bd;
+  border-radius: 5px;
+  padding: 10px 12px;
+  background: #fffef9;
+  color: #324d3c;
+  font: inherit;
+}
+.archive-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid #deded0;
+}
+.archive-setting p {
+  font-size: 12px;
+  margin: 7px 0 0;
+  max-width: 300px;
+}
+.archive-setting strong {
+  font-size: 13px;
+  color: #344b3c;
+}
+.mobile-design-list {
+  margin-top: 16px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+.mobile-design-list .design-item {
+  width: 100%;
+}
+.design-facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 22px 0;
+  padding: 18px 0;
+  border-top: 1px solid #d9dccc;
+  border-bottom: 1px solid #d9dccc;
+}
+.design-facts strong {
+  display: block;
+  font: 26px var(--serif);
+  color: #32583e;
+}
+.design-facts span {
+  font-size: 10px;
+  color: #717861;
+}
+.report-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #52664a;
+  font-size: 11px;
+  padding: 10px 3px;
+}
+.toast-action {
+  color: #e8efc8;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.change-row p {
+  overflow-wrap: anywhere;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+@media (max-width: 760px) {
+  .mobile-workspace {
+    display: inline-flex;
+  }
+  .breadcrumb {
+    min-width: 0;
+    flex: 1;
+  }
+  .breadcrumb strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 130px;
+  }
+  .topbar {
+    gap: 9px;
+    padding: 0 12px;
+  }
+  .top-actions {
+    flex-shrink: 0;
+  }
+  .report-link span {
+    display: none;
+  }
+  .design-facts {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .generation-choice {
+    padding-top: 2px;
+  }
+  .welcome-actions {
+    gap: 10px;
+  }
+  .mode-indicator {
+    font-size: 9px;
+  }
+  .artifact-footer {
+    gap: 6px;
+  }
+  .footer-buttons {
+    gap: 7px;
+  }
+  .footer-buttons .primary,
+  .footer-buttons .secondary {
+    padding: 10px 11px;
+    font-size: 11px;
+  }
+}
+.archive-toggle,
+.generation-choice button,
+.generation-choice > span,
+.starter-briefs > button > span,
+.design-facts span,
+.archived-banner {
+  color: #53614b;
+}
+.review-prompt,
+.review-prompt > div {
+  min-width: 0;
+}
+.footer-buttons {
+  flex-shrink: 0;
+}
+.workspace {
+  min-height: 520px;
+}
+@media (min-width: 761px) and (max-height: 850px) {
+  .welcome-copy {
+    padding-top: 18px;
+  }
+  .welcome-copy h1 {
+    font-size: 50px;
+    margin: 16px 0 8px;
+  }
+  .welcome-copy > p {
+    margin: 8px 0;
+    line-height: 1.6;
+  }
+  .blueprint-sketch svg {
+    max-height: 140px;
+  }
+  .welcome-bottom {
+    padding: 16px 0;
+  }
+  .welcome-actions {
+    margin-top: 0;
+  }
+  .sample-disclosure {
+    margin: 8px 0 12px;
+  }
+}
+.starter-options {
+  display: grid;
+  gap: 10px;
+  margin: 22px 0;
+}
+.starter-card {
+  text-align: left;
+  border: 1px solid #d4ddc9;
+  background: #f0f3e8;
+  border-radius: 8px;
+  padding: 16px;
+  width: 100%;
+}
+.starter-card > span {
+  display: block;
+  font: 10px var(--mono);
+  letter-spacing: 0.07em;
+  color: #58644d;
+  margin-bottom: 8px;
+}
+.starter-card > strong {
+  display: block;
+  font: 21px var(--serif);
+  color: #35513d;
+}
+.starter-card > p {
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+.source-caption {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.source-downloads {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+@media (max-width: 760px) {
+  .source-downloads {
+    gap: 8px;
+  }
+  .review-prompt > div {
+    max-width: 95px;
+  }
+}
+@media (max-width: 1100px) {
+  .artifact-footer {
+    flex-wrap: wrap;
+  }
+  .footer-buttons {
+    margin-left: auto;
+  }
+}
+@media (max-width: 1000px) and (min-width: 761px) {
+  .sidebar .archive-toggle {
+    font-size: 0;
+    gap: 0;
+    padding: 8px;
+  }
+}
+@media (max-width: 760px) {
+  .review-icon {
+    display: none;
+  }
+}
+.toast-error {
+  background: #8b4338;
+}
+.toast-info {
+  background: #52614c;
 }

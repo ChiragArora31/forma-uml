@@ -4,10 +4,12 @@ export default function WelcomeCanvas({
   session,
   busy,
   onStart,
+  onCompose,
 }: {
   session: Session;
   busy: boolean;
   onStart: () => void;
+  onCompose: () => void;
 }) {
   return (
     <div className="welcome-canvas">
@@ -95,15 +97,23 @@ export default function WelcomeCanvas({
           <strong>Every iteration, preserved.</strong>
         </div>
       </div>
-      <button className="welcome-cta" onClick={onStart} disabled={busy}>
-        {busy ? <Loader2 size={16} className="spin" /> : <Workflow size={17} />}Open the SEBI case
-        study
-        <ArrowRight size={16} />
-      </button>
+      <div className="welcome-actions">
+        {session.mode === 'live' && (
+          <button className="primary welcome-live" onClick={onCompose} disabled={busy}>
+            Start your own design
+            <ArrowRight size={16} />
+          </button>
+        )}
+        <button className="welcome-cta" onClick={onStart} disabled={busy}>
+          {busy ? <Loader2 size={16} className="spin" /> : <Workflow size={17} />}Open the SEBI case
+          study
+          <ArrowRight size={16} />
+        </button>
+      </div>
       <p className="sample-disclosure">
         {session.mode === 'sample'
           ? 'Curated sample · No API key needed · Real UML rendering'
-          : 'Generate the assignment brief with your configured model'}
+          : 'Live AI for your own ideas · Instant curated case study to explore'}
       </p>
     </div>
   );

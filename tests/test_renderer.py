@@ -44,6 +44,38 @@ def test_diagram_text_cannot_inject_source():
     assert '"' not in text('" as escape {')
 
 
+def test_readable_labels_do_not_become_activity_or_html_grammar():
+    assert text("Parse; score >= 0.8; List<String>") == "Parse, score at least 0.8, List of String"
+    assert text("size < 10 and count != 0") == "size below 10 and count differs from 0"
+
+
+def test_private_aliases_avoid_reserved_words_without_mutating_the_blueprint():
+    architecture = sample_architecture(SEBI_PROMPT)
+    component = architecture.components[0]
+    original = component.id
+    component.id = "class"
+    for connection in [*architecture.connections, *architecture.interactions]:
+        if connection.source == original:
+            connection.source = "class"
+        if connection.target == original:
+            connection.target = "class"
+    for step in architecture.steps:
+        if step.owner == original:
+            step.owner = "class"
+    for node in architecture.nodes:
+        node.components = ["class" if c == original else c for c in node.components]
+    for timeline in architecture.timelines:
+        if timeline.component == original:
+            timeline.component = "class"
+    snapshot = architecture.model_dump()
+    for kind in DiagramType:
+        source = compile_diagram(architecture, kind)
+        assert " as class\n" not in source
+        check_source(source)
+    assert " as c_class\n" in compile_diagram(architecture, DiagramType.COMPONENT)
+    assert architecture.model_dump() == snapshot
+
+
 @pytest.mark.renderer
 @pytest.mark.parametrize("kind", list(DiagramType))
 async def test_real_renderer_all_14_types_across_revisions(kind):
@@ -129,3 +161,36 @@ async def test_cancelling_the_only_request_cleans_up_render_task(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await request
     assert not renderer.inflight and not renderer.waiters
+
+
+def test_blank_preview_has_a_readable_validation_error():
+    with pytest.raises(RenderError, match="Source must contain"):
+        check_source(" " * 20)
+
+
+async def test_prevalidated_sample_cache_requires_matching_renderer_and_sanitizes_svg(tmp_path):
+    import hashlib
+    import json
+
+    jar = tmp_path / "plantuml.jar"
+    jar.write_bytes(b"fixture-jar")
+    source = "@startuml\nAlice -> Bob: hello\n@enduml"
+    cache = {
+        "jar_sha256": hashlib.sha256(jar.read_bytes()).hexdigest(),
+        "diagrams": [
+            {
+                "source": source,
+                "svg": '<svg xmlns="http://www.w3.org/2000/svg"><script>unsafe()</script><text>hello</text></svg>',
+            }
+        ],
+    }
+    target = tmp_path / "case-study.json"
+    target.write_text(json.dumps(cache))
+    renderer = Renderer(jar, warm_samples=True)
+    svg, cached = await renderer.render(source)
+    assert cached and "script" not in svg and "hello" in svg
+    cache["jar_sha256"] = "different-engine"
+    target.write_text(json.dumps(cache))
+    assert not Renderer(jar, warm_samples=True).cache
+    target.write_text('{"diagrams":null}')
+    assert not Renderer(jar, warm_samples=True).cache

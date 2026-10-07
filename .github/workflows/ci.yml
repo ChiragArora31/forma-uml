@@ -38,14 +38,14 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y graphviz
       - run: ./scripts/setup.sh
       - run: uv sync --frozen --extra training
-      - run: uv run ruff check app tests && uv run ruff format --check app tests
+      - run: uv run ruff check app tests scripts/build_case_study.py && uv run ruff format --check app tests scripts/build_case_study.py
       - run: uv run --extra training pytest -q
       - name: Hosted storage boundaries on disposable PostgreSQL
         env:
           DATABASE_URL_UNPOOLED: postgresql://postgres:forma-test@127.0.0.1:5438/forma_test
         run: |
           uv run python -m app.migrate
-          uv run pytest tests/test_api.py tests/test_admission.py --postgres -q
+          uv run pytest tests/test_api.py tests/test_admission.py tests/test_workspace.py --postgres -q
       - run: npm run typecheck --prefix frontend
       - run: npm run format:check --prefix frontend
       - run: npx playwright install --with-deps chromium

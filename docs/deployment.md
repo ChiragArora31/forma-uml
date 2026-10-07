@@ -19,12 +19,16 @@ The migration command applies numbered SQL files once, under an advisory transac
 4. Configure Production variables:
 
 ```dotenv
-FORMA_MODE=sample
+FORMA_MODE=live
 FORMA_COOKIE_SECURE=true
+FORMA_MODEL=gemini-3.1-flash-lite
+FORMA_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+FORMA_RENDER_TIMEOUT=45
+FORMA_RENDER_CONCURRENCY=2
 PORT=80
 ```
 
-For verified live generation, additionally set `FORMA_MODE=live`, `FORMA_API_KEY`, `FORMA_MODEL`, and the provider's OpenAI-compatible `FORMA_BASE_URL`. The endpoint must support function calling. Use Vercel **Secret** variables for API keys, never browser variables. Vercel Gateway can use OIDC where its token is available to the runtime; container startup must not assume that a development OIDC token is present in production. Do not copy an expiring development token into production secrets.
+Set the dedicated free-tier `FORMA_API_KEY` as a production **Secret**. For a no-key deployment, explicitly use `FORMA_MODE=sample`. The endpoint must support function calling. Use Vercel **Secret** variables for API keys, never browser variables. Vercel Gateway can use OIDC where its token is available to the runtime; container startup must not assume that a development OIDC token is present in production. Do not copy an expiring development token into production secrets.
 
 5. Build a staged production deployment, inspect it, and promote it only after verification:
 
@@ -61,5 +65,5 @@ docker run --rm --name forma-postgres-test -p 127.0.0.1:5438:5432 \
 # In another terminal, after PostgreSQL is ready:
 DATABASE_URL_UNPOOLED=postgresql://postgres:forma-test@127.0.0.1:5438/forma_test \
   uv run python -m app.migrate
-uv run pytest tests/test_api.py tests/test_admission.py --postgres -q
+uv run pytest tests/test_api.py tests/test_admission.py tests/test_workspace.py --postgres -q
 ```

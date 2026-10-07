@@ -37,7 +37,7 @@ def app(tmp_path, fake_renderer, request):
 
         with psycopg.connect(dsn) as db:
             db.execute(
-                "TRUNCATE training_outbox, feedback, revisions, conversations, generation_leases CASCADE"
+                "TRUNCATE training_outbox, feedback, revisions, conversations, generation_leases, provider_usage CASCADE"
             )
     return create_app(
         Settings(_env_file=None, database_url=dsn, data_dir=tmp_path, frontend_dir=Path("/not-built")),

@@ -28,7 +28,17 @@ skinparam actorStyle awesome
 
 def text(value: str) -> str:
     # Newlines, quotes, Creole, preprocessor, and link delimiters never reach PlantUML grammar.
-    value = re.sub(r"[^\w .,;:/()+?=\-]", " ", value, flags=re.UNICODE)
+    value = value.replace(";", ",")
+    value = re.sub(r"([A-Z]\w*)<([^<>]+)>", r"\1 of \2", value)
+    for symbol, phrase in (
+        (">=", " at least "),
+        ("<=", " at most "),
+        ("!=", " differs from "),
+        (">", " above "),
+        ("<", " below "),
+    ):
+        value = value.replace(symbol, phrase)
+    value = re.sub(r"[^\w .,:/()+?=\-]", " ", value, flags=re.UNICODE)
     return re.sub(r"\s+", " ", value).strip()[:240] or "Unnamed"
 
 
@@ -37,11 +47,28 @@ def quoted(value: str) -> str:
 
 
 def compile_diagram(a: Architecture, kind: DiagramType) -> str:
+    # Prefix private grammar aliases so legitimate IDs such as "class" never become keywords.
+    a = a.model_copy(deep=True)
+    components = {c.id: f"c_{c.id}" for c in a.components}
+    entities = {e.id: f"e_{e.id}" for e in a.entities}
+    for c in a.components:
+        c.id = components[c.id]
+    for e in a.entities:
+        e.id = entities[e.id]
+    for link in [*a.connections, *a.interactions]:
+        link.source, link.target = components[link.source], components[link.target]
+    for relation in a.relations:
+        relation.source, relation.target = entities[relation.source], entities[relation.target]
+    for step in a.steps:
+        step.owner = components[step.owner]
+    for node in a.nodes:
+        node.components = [components[c] for c in node.components]
+    for timeline in a.timelines:
+        timeline.component = components[timeline.component]
     lines = ["@startuml", STYLE, f"title {text(a.title)} / {kind.value.replace('_', ' ').title()}"]
     names = {c.id: c.name for c in a.components}
     if kind == DiagramType.COMPONENT:
         lines.append("top to bottom direction")
-        packages = {c.id: c.package for c in a.components}
         for package in dict.fromkeys(c.package for c in a.components):
             lines.append(f"package {quoted(package)} {{")
             for c in a.components:
@@ -57,11 +84,8 @@ def compile_diagram(a: Architecture, kind: DiagramType) -> str:
                 lines.append(f"  {shape} {quoted(c.name)} as {c.id}")
             lines.append("}")
         for c in a.connections:
-            arrow = (
-                "..>"
-                if c.kind == "dependency"
-                else ("-right->" if packages[c.source] == packages[c.target] else "-->")
-            )
+            # Forced lateral ranks can make cyclic retry graphs prohibitively slow to lay out.
+            arrow = "..>" if c.kind == "dependency" else "-->"
             label = ("async: " if c.kind == "async" else "") + c.label
             lines.append(f"{c.source} {arrow} {c.target} : {text(label)}")
     elif kind == DiagramType.SEQUENCE:

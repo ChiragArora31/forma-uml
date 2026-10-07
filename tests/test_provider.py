@@ -115,3 +115,89 @@ def test_gateway_oidc_is_never_forwarded_to_a_different_provider():
                 base_url="https://unrelated.invalid/v1",
             )
         )
+
+
+async def test_gemini_schema_and_repair_preserve_strict_local_validation():
+    from app.models import Architecture
+
+    seen = []
+    invalid = copy.deepcopy(BASE)
+    invalid["connections"][0]["source"] = "not_declared"
+
+    async def handle(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json=completion(invalid if len(seen) == 1 else BASE))
+
+    settings = Settings(
+        _env_file=None,
+        api_key="test-key",
+        model="gemini-test",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    )
+    live = LiveProvider(settings)
+    live.llm = ChatOpenAI(
+        model=settings.model,
+        **live.options,
+        http_async_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)),
+    )
+    result = await live.generate(SEBI_PROMPT, None, [])
+    assert isinstance(result["architecture"], Architecture)
+    assert len(seen) == 2
+    assert seen[0]["tool_choice"] == "required"
+    properties = seen[0]["tools"][0]["function"]["parameters"]["properties"]
+    assert properties["steps"]["items"]["properties"]["guard"]["type"] == "string"
+    assert [m["role"] for m in seen[1]["messages"]] == ["system", "user", "user"]
+    assert "not_declared" in seen[1]["messages"][-1]["content"]
+
+
+def test_identifier_normalization_never_invents_missing_references():
+    from app.models import Architecture
+    from app.provider import normalize_identifiers
+
+    design = copy.deepcopy(BASE)
+    old = design["components"][0]["id"]
+    new = old.upper().replace("_", "-")
+    design["components"][0]["id"] = new
+    for connection in design["connections"]:
+        for field in ["source", "target"]:
+            if connection[field] == old:
+                connection[field] = new
+    for interaction in design["interactions"]:
+        for field in ["source", "target"]:
+            if interaction[field] == old:
+                interaction[field] = new
+    # Other references use already canonical spellings; exact canonical aliases remain valid.
+    normalized = normalize_identifiers(design)
+    assert normalized["components"][0]["id"] == old
+    assert design["components"][0]["id"] == new
+    Architecture.model_validate(normalized)
+    design["connections"][0]["source"] = "missing_component"
+    with pytest.raises(ValueError, match="missing_component"):
+        Architecture.model_validate(normalize_identifiers(design))
+
+
+async def test_configured_model_fallback_only_on_capacity_errors():
+    seen = []
+
+    async def handle(request):
+        payload = json.loads(request.content)
+        seen.append(payload["model"])
+        if payload["model"] == "primary":
+            return httpx.Response(
+                503, json={"error": {"message": "capacity unavailable", "type": "server_error"}}
+            )
+        return httpx.Response(200, json=completion(BASE))
+
+    settings = Settings(
+        _env_file=None,
+        api_key="test-key",
+        model="primary",
+        fallback_model="fallback",
+        base_url="https://test.invalid/v1",
+    )
+    live = LiveProvider(settings)
+    live.options["http_async_client"] = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+    live.llm = ChatOpenAI(model=settings.model, **live.options)
+    result = await live.generate(SEBI_PROMPT, None, [])
+    assert seen == ["primary", "fallback"]
+    assert result["trace"]["model"] == "fallback"

@@ -65,7 +65,7 @@ Source preview additionally rejects preprocessing directives, macros, linked res
 ### 3. Minimize latency
 
 - One structured architecture generation, not one model call per diagram.
-- At most one repair attempt for schema/reference failures; provider errors remain visible.
+- At most two repair attempts on Gemini, or one on other compatible providers for schema/reference failures; provider errors remain visible.
 - Render fan-out is asynchronous, bounded to three Java processes by default.
 - A 128-entry LRU cache keyed by exact source hash avoids repeated render work.
 - In-flight identical sources share a render task.
@@ -91,7 +91,7 @@ The hosted store uses psycopg with Neon's pooled connection URL. A small adapter
 
 Generation admission uses a shared database lease: at most one active generation per owner and four globally by default. Claims are serialized with an immediate SQLite transaction or a PostgreSQL advisory transaction lock. Cancellation releases only the exact owner's request; stale leases expire after five minutes if an instance dies. These leases bound work but do not provide durable background execution. History and ZIP downloads stream to support larger multi-view revisions.
 
-This is anonymous session isolation, not a full account system. Renderer caches, source-preview admission, and lightweight rate counters remain per instance. Public hosting needs appropriate usage controls; larger production use should add real login, shared request quotas, durable jobs, retention controls, and a separately managed renderer.
+This is anonymous session isolation, not a full account system. Renderer caches, source-preview admission, and lightweight rate counters remain per instance. Public hosting needs appropriate usage controls; larger production use should add real login, authenticated usage quotas, durable jobs, retention controls, and a separately managed renderer.
 
 ## Important failure behavior
 
@@ -102,9 +102,21 @@ This is anonymous session isolation, not a full account system. Renderer caches,
 | Missing/foreign session | 401 or 404 |
 | Stale base revision | 409; no overwrite |
 | Duplicate completed request | Replay the exact saved revision |
-| Schema/reference inconsistency | One repair attempt; then visible error |
+| Schema/reference inconsistency | Bounded repair attempts; then visible error |
 | Provider timeout/error | Visible error, no sample fallback |
 | Any failed render | No partial revision |
 | Cancelled generation | Render tasks/processes are cancelled; a save that already completed may appear on reload |
 | Feedback delivery failure | Durable context remains retryable |
 | Unknown remote training outcome | `needs_reconciliation`; never blindly re-submit a potentially completed update |
+
+## Hosted-product hardening
+
+Gemini’s function API receives a compatible schema projection. The complete Pydantic bounds and references are still checked locally. Identifier spelling can be normalized to lower snake case, but missing semantic references are never manufactured. Reference errors are collected together so a repair sees all failing categories. Domain relations connect entities; service dependencies connect components.
+
+The compiler prefixes private grammar aliases to avoid reserved-word collisions and converts statement separators and comparison operators into safe readable labels. Cyclic component graphs use ordinary directed edges instead of forced lateral ranks. These choices protect arbitrary generated designs as well as curated fixtures.
+
+Builds render all 42 case-study projections with the pinned engine. Cold instances preload these sanitized, source-hashed artifacts only when the jar checksum matches. Arbitrary designs and edited sources still render normally; there is no sample fallback for failed live generation. The optional seed cache can fail safely.
+
+Live attempts use transactional daily counters shared across instances. HTTP streams send heartbeats and enforce an overall verification deadline, while cancellation closes the underlying graph and render processes. Hosted rendering uses two processes and a 45-second individual timeout within the fixed resource budget.
+
+Workspace names and reversible archive state are separate from immutable blueprint revisions. Drafts and preview edits use versioned browser storage. A design URL restores that browser’s workspace; it does not grant access to another browser. Preview SVG/PNG downloads reflect the validated edited source, while ZIP exports retain the original generated revision and include a human-readable brief plus feedback snapshot.

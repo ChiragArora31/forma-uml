@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import re
 from collections import OrderedDict
 from pathlib import Path
@@ -64,10 +65,8 @@ def sanitize_svg(raw: str) -> str:
 def check_source(source: str):
     if len(source.encode()) > 60000:
         raise RenderError("Diagram source exceeds the size limit")
-    if (
-        source.strip().splitlines()[0].strip() != "@startuml"
-        or source.strip().splitlines()[-1].strip() != "@enduml"
-    ):
+    lines = source.strip().splitlines()
+    if not lines or lines[0].strip() != "@startuml" or lines[-1].strip() != "@enduml":
         raise RenderError("Source must contain one @startuml / @enduml diagram")
     if len(re.findall(r"@startuml|@enduml", source, re.I)) != 2:
         raise RenderError("Only one diagram may be rendered at a time")
@@ -76,12 +75,24 @@ def check_source(source: str):
 
 
 class Renderer:
-    def __init__(self, jar: Path, java="java", timeout=20.0, concurrency=3):
+    def __init__(self, jar: Path, java="java", timeout=20.0, concurrency=3, warm_samples=False):
         self.jar, self.java, self.timeout = jar.resolve(), java, timeout
         self.semaphore = asyncio.Semaphore(concurrency)
         self.cache: OrderedDict[str, str] = OrderedDict()
         self.inflight: dict[str, asyncio.Task] = {}
         self.waiters: dict[str, int] = {}
+        seed = self.jar.parent / "case-study.json"
+        if warm_samples and self.jar.is_file() and seed.is_file():
+            try:
+                data = json.loads(seed.read_text())
+                if data["jar_sha256"] == hashlib.sha256(self.jar.read_bytes()).hexdigest():
+                    for item in data["diagrams"][:128]:
+                        check_source(item["source"])
+                        self.cache[hashlib.sha256(item["source"].encode()).hexdigest()] = sanitize_svg(
+                            item["svg"]
+                        )
+            except (ValueError, KeyError, TypeError, OSError):
+                self.cache.clear()
 
     async def render(self, source: str) -> tuple[str, bool]:
         check_source(source)

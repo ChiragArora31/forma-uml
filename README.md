@@ -13,7 +13,7 @@ A conversational UML workspace: describe a system, explore a consistent blueprin
 
 Built for the [OnFinance assignment](https://p.ip.fi/UiOJ). The deliverable is a **software-design chat platform**; the SEBI compliance pipeline is the supplied example design, not a claim that this repository implements regulatory ingestion or legal analysis.
 
-**Hosted review:** [Open Forma](https://forma-uml-chiragarora1831-gmailcoms-projects.vercel.app) · The hosted build currently runs the explicitly labelled, no-key sample. Live provider access is a separate configuration and verification step.
+**Hosted review:** [Open Forma](https://forma-uml-chiragarora1831-gmailcoms-projects.vercel.app) · Create your own architecture with free-tier Gemini, or explore the instant curated SEBI case study. No reviewer sign-in is required; saved work is private to the browser session.
 
 ## Try it in five minutes
 
@@ -40,14 +40,18 @@ The app is exposed only on `127.0.0.1:8018`. The named `forma-data` volume prese
 
 ## A short reviewer walkthrough
 
+**Start with the instant case study**, then try **Start your own design** for a live model-generated architecture. The interface shows the remaining free AI allowance before a request; the case study and source previews do not consume it.
+
+Rename a design through **Design settings**, archive it to tidy the workspace, and restore it later. Briefs and source-preview edits survive reloads. Mobile users can open their history through **Open workspace**. Export a review brief, a portable ZIP with review snapshots, or individual SVG/PNG/PlantUML files.
+
 1. Click **Open the SEBI case study**. Sequence and component diagrams are the recommended starting pair. Use the diagram chooser to request any or all of the 14 UML views.
 2. Explore the canvas: zoom, pan, fit, and expand. Open **Design notes** for requirements, assumptions, and component responsibilities.
 3. Click **Add a queue, retries & failure recovery**, then send. A second revision retains the original requirements and adds durable asynchronous processing.
 4. Click **Require officer approval before publication**, then send. The third revision adds an explicit approval boundary and guarded publication lifecycle.
 5. Open **Changes**, then use the version picker to revisit the original design. Updates always build on the latest revision, with stale-write protection.
 6. **Review design** with a rating and actionable comment. Feedback is linked to the exact revision and optional diagram; it is stored together with a durable ART outbox record.
-7. Open **Source**, edit the PlantUML, and click **Check & preview**. Invalid syntax produces an error rather than a misleading success image. Source edits are local previews and do not overwrite saved revisions.
-8. **Export ZIP** downloads SVGs, editable `.puml` files, the shared architecture JSON, and revision metadata. Reload the page and reopen the saved design to verify persistence.
+7. Open **Source**, edit the PlantUML, and click **Check & preview**. Invalid syntax produces an error rather than a misleading success image. Source edits are local previews saved in the browser; they do not overwrite generated revisions. SVG and PNG downloads use the verified preview when present.
+8. **Export ZIP** downloads SVGs, editable `.puml` files, the shared architecture JSON, revision metadata, a readable design-review brief, and review snapshots. Reload the page and reopen the saved design to verify persistence.
 
 Sample mode is a curated SEBI fixture with the two suggested updates. **It does not call an LLM and does not accept arbitrary designs or changes.** This makes the repository immediately inspectable without credentials while keeping the live-model boundary honest.
 
@@ -67,9 +71,9 @@ FORMA_MODEL=gpt-4.1-mini
 # FORMA_BASE_URL=https://api.openai.com/v1
 ```
 
-Live mode accepts arbitrary software briefs and incremental or replacement specifications. The provider is accessed through LangChain; a LangGraph pipeline generates and validates one shared typed architecture, deterministically compiles the requested views, and validates each one using the actual PlantUML renderer. Invalid schema/reference output receives one bounded repair attempt. Provider errors never silently switch to sample mode.
+Live mode accepts arbitrary software briefs and incremental or replacement specifications. The provider is accessed through LangChain; a LangGraph pipeline generates and validates one shared typed architecture, deterministically compiles the requested views, and validates each one using the actual PlantUML renderer. Invalid schema/reference output receives up to two bounded repair attempts on Gemini, or one on other compatible providers. Gemini uses a supported tool-schema projection while full validation remains local; identifier spelling is normalized without inventing missing references. Provider errors never silently switch to sample mode.
 
-The default is [GPT-4.1 mini](https://developers.openai.com/api/docs/models/gpt-4.1-mini), chosen for tool calling and non-reasoning latency. The model and endpoint are configurable. The interface is not coupled to this model. Credentials never go to the browser, exports, or Git.
+The hosted demo uses **Gemini 3.1 Flash-Lite** from a dedicated Google project with billing disabled. Local no-key startup remains a curated sample. The configurable OpenAI-compatible example is [GPT-4.1 mini](https://developers.openai.com/api/docs/models/gpt-4.1-mini), chosen for tool calling and non-reasoning latency. The model and endpoint are configurable. The interface is not coupled to this model. Credentials never go to the browser, exports, or Git.
 
 ## Hosted deployment
 
@@ -95,6 +99,19 @@ The minimum request shape from the assignment works directly, including `sequent
   "diagram_types": ["sequential", "component"]
 }
 ```
+
+## Free Gemini configuration
+
+Use an AI Studio project explicitly marked **Free** with billing disabled. Keep its dedicated key on the server:
+
+```dotenv
+FORMA_MODE=live
+FORMA_API_KEY=your-dedicated-gemini-key
+FORMA_MODEL=gemini-3.1-flash-lite
+FORMA_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+```
+
+The hosted trial limits AI attempts to 12 per anonymous workspace and 150 globally per UTC day. Each attempt can make at most three model calls; provider limits still apply. The separate curated case study is always available without a model call. Saving a review never starts paid training.
 
 ## Fourteen UML perspectives
 
@@ -159,9 +176,9 @@ See [verification notes](docs/verification.md) for the checks actually run, and 
 
 ## Scope and production boundaries
 
-This is a take-home implementation with local and hosted deployment paths. Anonymous browser-session isolation is implemented; enterprise login, organization permissions, managed session expiry, and account recovery are outside scope. Generation admission uses expiring database leases shared across instances. Renderer caching, source-preview admission, and lightweight request-rate counters remain per instance. A larger deployment should add proper identity, shared request quotas, durable job scheduling, tenant retention controls, and a managed rendering service.
+This is a take-home implementation with local and hosted deployment paths. Anonymous browser-session isolation is implemented; enterprise login, organization permissions, managed session expiry, and account recovery are outside scope. Generation admission uses expiring database leases shared across instances. Renderer caching, source-preview admission, and lightweight request-rate counters remain per instance. A larger deployment should add proper identity, authenticated usage quotas, durable job scheduling, tenant retention controls, and a managed rendering service.
 
-Local designs and feedback live in `.data/forma.sqlite3`. When `DATABASE_URL` is configured, PostgreSQL becomes the durable store; versioned migrations must run before deployment. Clearing the browser's session cookie loses access to the anonymous workspace; server records remain. Source previews are not saved edits. Feedback exports can contain proprietary designs; keep them in ignored `.data/` storage. The project includes no email content, credentials, or employer data.
+Local designs and feedback live in `.data/forma.sqlite3`. When `DATABASE_URL` is configured, PostgreSQL becomes the durable store; versioned migrations must run before deployment. Clearing the browser's session cookie loses access to the anonymous workspace; server records remain. Source-preview drafts are saved in this browser only; they do not replace generated revisions. Feedback exports can contain proprietary designs; keep them in ignored `.data/` storage. The project includes no email content, credentials, or employer data.
 
 The project implements UML design generation, not full compliance analysis, formal UML verification, or an already-trained specialized model. Live commercial generation and remote GPU training require separately configured credentials; verification status is documented rather than implied.
 

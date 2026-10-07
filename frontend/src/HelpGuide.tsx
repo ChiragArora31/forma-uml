@@ -29,8 +29,8 @@ export default function HelpGuide({ session }: { session: Session }) {
         <div>
           <h3>Iterate without losing your thinking</h3>
           <p>
-            Send an updated brief or a specific change. Revisions persist in SQLite; use the version
-            picker to revisit any saved design.
+            Send an updated brief or a specific change. Revisions are saved in your workspace; use
+            the version picker to revisit any saved design.
           </p>
         </div>
       </div>
@@ -40,7 +40,8 @@ export default function HelpGuide({ session }: { session: Session }) {
           <h3>Review, then take it with you</h3>
           <p>
             Ratings and comments are saved against the exact revision for ART training. Export
-            includes SVG, editable PlantUML, the system model, and revision metadata.
+            includes SVG, editable PlantUML, the system model, a design review brief, and your
+            feedback.
           </p>
         </div>
       </div>
@@ -50,13 +51,28 @@ export default function HelpGuide({ session }: { session: Session }) {
         </strong>
         <p>
           {session.mode === 'sample'
-            ? 'The SEBI architecture and two suggested updates are curated fixtures. Arbitrary prompts need live mode: set FORMA_MODE=live and configure FORMA_API_KEY on the server.'
+            ? 'The SEBI architecture and two suggested updates are curated fixtures. Use the suggested case-study refinements. Live AI accepts your own systems when available.'
             : `Your configured model is ${session.model}. API keys stay on the server.`}
         </p>
         <p>
-          This workspace uses an anonymous browser-session cookie. It is intended for local review;
-          production accounts need proper authentication.
+          Your saved designs are private to this browser. Draft briefs and source previews are saved
+          as you work. Keep the browser cookie to retain workspace access, and export designs you
+          want to share.
         </p>
+        {session.mode === 'live' && (
+          <p>
+            Your brief is sent to the configured model for generation. This free Gemini demo follows{' '}
+            <a
+              className="text-link"
+              href="https://ai.google.dev/gemini-api/terms"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Google’s free-service data terms
+            </a>
+            ; use non-sensitive example designs.
+          </p>
+        )}
       </div>
     </>
   );

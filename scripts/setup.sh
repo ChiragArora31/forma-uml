@@ -20,4 +20,5 @@ fi
 uv sync --frozen --python 3.12
 npm ci --prefix frontend
 npm run build --prefix frontend
+uv run python -m scripts.build_case_study
 printf '\nReady. Run ./scripts/start.sh, then open http://127.0.0.1:8018\n'

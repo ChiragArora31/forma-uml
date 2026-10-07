@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     plantuml_jar: Path = Path(".tools/plantuml.jar")
     java: str = "java"
     model: str = "gpt-4.1-mini"
+    fallback_model: str | None = None
+    live_daily_limit: int = 12
+    live_global_daily_limit: int = 150
     api_key: str = ""
     base_url: str | None = None
     generation_timeout: float = 90

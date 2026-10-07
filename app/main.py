@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import secrets
+import shutil
 import time
 import zipfile
 from collections import OrderedDict
@@ -14,15 +15,63 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings
-from app.models import CATALOG, Architecture, FeedbackRequest, GenerateRequest, SourceRequest
+from app.models import (
+    CATALOG,
+    Architecture,
+    ConversationUpdateRequest,
+    FeedbackRequest,
+    GenerateRequest,
+    SourceRequest,
+)
 from app.pipeline import Pipeline
 from app.provider import LiveProvider, ProviderError, SampleProvider
 from app.renderer import Renderer, RenderError
+from app.report import design_report
 from app.sample import APPROVAL_PROMPT, ASYNC_PROMPT, SEBI_PROMPT, SampleUnavailable
-from app.store import Conflict, NotFound, Store
+from app.store import Conflict, NotFound, QuotaExceeded, Store
 
 logger = logging.getLogger("forma")
 COOKIE = "forma_session"
+
+
+def streamed_json(result):
+    async def chunks():
+        parts, size = [], 0
+        for part in json.JSONEncoder(ensure_ascii=False).iterencode(result):
+            parts.append(part)
+            size += len(part)
+            if size >= 65536:
+                yield "".join(parts)
+                parts, size = [], 0
+        if parts:
+            yield "".join(parts)
+
+    return StreamingResponse(chunks(), media_type="application/json")
+
+
+async def progress_events(graph, state, heartbeat_seconds=10):
+    started = time.perf_counter()
+    iterator = graph.astream(state, stream_mode="updates").__aiter__()
+    task = asyncio.create_task(anext(iterator))
+    try:
+        while True:
+            if time.perf_counter() - started > 240:
+                raise TimeoutError("Generation exceeded its overall verification deadline")
+            done, _ = await asyncio.wait({task}, timeout=heartbeat_seconds)
+            if not done:
+                yield None
+                continue
+            try:
+                event = task.result()
+            except StopAsyncIteration:
+                break
+            yield event
+            task = asyncio.create_task(anext(iterator))
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await iterator.aclose()
 
 
 def create_app(settings: Settings | None = None, provider=None, renderer=None):
@@ -31,10 +80,15 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
         raise ValueError("FORMA_MODE must be sample or live")
     store = Store(settings.data_dir / "forma.sqlite3", database_url=settings.database_url)
     renderer = renderer or Renderer(
-        settings.plantuml_jar, settings.java, settings.render_timeout, settings.render_concurrency
+        settings.plantuml_jar,
+        settings.java,
+        settings.render_timeout,
+        settings.render_concurrency,
+        warm_samples=True,
     )
     provider = provider or (LiveProvider(settings) if settings.mode == "live" else SampleProvider())
     pipeline = Pipeline(provider, renderer)
+    sample_pipeline = Pipeline(SampleProvider(), renderer)
     active: set[str] = set()
     owners_active: set[str] = set()
     render_requests: set[str] = set()
@@ -73,6 +127,10 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
     @app.exception_handler(Conflict)
     async def conflict(request, exc):
         return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(QuotaExceeded)
+    async def quota_exceeded(request, exc):
+        return JSONResponse(status_code=429, content={"detail": str(exc)})
 
     def owner(request: Request):
         session = request.cookies.get(COOKIE)
@@ -124,29 +182,44 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
 
     @app.get("/api/health")
     async def health():
-        return {"status": "ok", "mode": settings.mode, "renderer_ready": settings.plantuml_jar.is_file()}
+        try:
+            database_ready = await asyncio.to_thread(store.ready)
+        except Exception:
+            database_ready = False
+        renderer_ready = (
+            settings.plantuml_jar.is_file()
+            and bool(shutil.which(settings.java))
+            and bool(shutil.which("dot"))
+        )
+        ready = database_ready and renderer_ready
+        return JSONResponse(
+            status_code=200 if ready else 503,
+            content={
+                "status": "ok" if ready else "unavailable",
+                "mode": settings.mode,
+                "renderer_ready": renderer_ready,
+                "database_ready": database_ready,
+            },
+        )
 
     @app.get("/api/conversations")
-    async def conversations(uid=Depends(owner)):
-        return await asyncio.to_thread(store.list_conversations, uid)
+    async def conversations(archived: bool = False, uid=Depends(owner)):
+        return await asyncio.to_thread(store.list_conversations, uid, archived)
+
+    @app.get("/api/allowance")
+    async def allowance(uid=Depends(owner)):
+        return await asyncio.to_thread(
+            store.quota, uid, settings.live_daily_limit, settings.live_global_daily_limit
+        )
+
+    @app.patch("/api/conversations/{cid}")
+    async def manage_conversation(cid: UUID, payload: ConversationUpdateRequest, uid=Depends(mutation)):
+        return streamed_json(await asyncio.to_thread(store.update_conversation, uid, str(cid), payload))
 
     @app.get("/api/conversations/{cid}")
     async def conversation(cid: UUID, uid=Depends(owner)):
         result = await asyncio.to_thread(store.conversation, uid, str(cid))
-
-        async def history():
-            # Batch small JSON tokens; stream large histories without a platform payload cap.
-            parts, size = [], 0
-            for part in json.JSONEncoder(ensure_ascii=False).iterencode(result):
-                parts.append(part)
-                size += len(part)
-                if size >= 65536:
-                    yield "".join(parts)
-                    parts, size = [], 0
-            if parts:
-                yield "".join(parts)
-
-        return StreamingResponse(history(), media_type="application/json")
+        return streamed_json(result)
 
     def sse(event, data):
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -160,10 +233,22 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
                 yield sse("complete", replay)
 
             return StreamingResponse(replay_stream(), media_type="text/event-stream")
+        generation_mode = payload.mode or settings.mode
+        if generation_mode == "live" and settings.mode != "live":
+            raise HTTPException(
+                503, "Live AI is unavailable in this workspace. The case study is ready to explore."
+            )
+        selected_pipeline = sample_pipeline if payload.mode == "sample" else pipeline
         previous = None
         feedback = []
         if payload.conversation_id:
             conv = await asyncio.to_thread(store.conversation, uid, str(payload.conversation_id))
+            if conv["archived"]:
+                raise Conflict("Restore this archived design before creating a new revision.")
+            if generation_mode == "sample" and conv["revisions"][-1]["mode"] != "sample":
+                raise Conflict(
+                    "Curated refinements belong to a case-study design. Use live AI for this design, or start a new case study."
+                )
             if conv["latest"] != payload.base_revision:
                 raise Conflict("The conversation changed. Reload the latest revision before updating.")
             previous = Architecture.model_validate(conv["revisions"][-1]["architecture"])
@@ -176,6 +261,17 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
         await asyncio.to_thread(
             store.claim_generation, uid, str(payload.request_id), settings.max_active_generations
         )
+        if generation_mode == "live":
+            try:
+                await asyncio.to_thread(
+                    store.reserve_live_generation,
+                    uid,
+                    settings.live_daily_limit,
+                    settings.live_global_daily_limit,
+                )
+            except BaseException:
+                await asyncio.to_thread(store.release_generation, uid, str(payload.request_id))
+                raise
         active.add(key)
         owners_active.add(uid)
 
@@ -190,9 +286,12 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
             try:
                 yield sse("phase", {"phase": "design", "message": "Building a shared system model"})
                 # Graph streams node completion; a validated design is committed atomically only after every view renders.
-                async for event in pipeline.graph.astream(state, stream_mode="updates"):
+                async for event in progress_events(selected_pipeline.graph, state):
                     if await request.is_disconnected():
                         return
+                    if event is None:
+                        yield sse("heartbeat", {"elapsed_seconds": round(time.perf_counter() - started)})
+                        continue
                     for node, update in event.items():
                         state.update(update)
                         if node == "design":
@@ -202,10 +301,18 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
                         elif node == "compile_and_validate":
                             yield sse("phase", {"phase": "save", "message": "Saving your design revision"})
                 state["timings"]["total_ms"] = round((time.perf_counter() - started) * 1000)
-                revision = await asyncio.to_thread(store.save_revision, uid, payload, state, settings.mode)
+                revision = await asyncio.to_thread(store.save_revision, uid, payload, state, generation_mode)
                 yield sse("complete", revision)
             except asyncio.CancelledError:
                 raise
+            except TimeoutError:
+                yield sse(
+                    "error",
+                    {
+                        "message": "This design took too long to verify. Your saved work is safe; retry with fewer views or a smaller brief.",
+                        "request_id": str(payload.request_id),
+                    },
+                )
             except (SampleUnavailable, RenderError, ProviderError, Conflict, NotFound) as e:
                 yield sse("error", {"message": str(e), "request_id": str(payload.request_id)})
             except Exception:
@@ -255,8 +362,11 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
     @app.get("/api/revisions/{rid}/export")
     async def export(rid: UUID, uid=Depends(owner)):
         revision = await asyncio.to_thread(store.revision, uid, str(rid))
+        reviews = await asyncio.to_thread(store.feedback_list, uid, str(rid))
         output = io.BytesIO()
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("DESIGN_REVIEW.md", design_report(revision, reviews, packaged=True))
+            archive.writestr("reviews.json", json.dumps(reviews, indent=2, ensure_ascii=False))
             for diagram in revision["diagrams"]:
                 archive.writestr(f"diagrams/{diagram['type']}.puml", diagram["source"])
                 archive.writestr(f"diagrams/{diagram['type']}.svg", diagram["svg"])
@@ -288,6 +398,18 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
             headers={
                 "Content-Disposition": f'attachment; filename="forma-revision-{revision["number"]}.zip"'
             },
+        )
+
+    @app.get("/api/revisions/{rid}/report")
+    async def report(rid: UUID, uid=Depends(owner)):
+        revision, reviews = await asyncio.gather(
+            asyncio.to_thread(store.revision, uid, str(rid)),
+            asyncio.to_thread(store.feedback_list, uid, str(rid)),
+        )
+        return HTMLResponse(
+            design_report(revision, reviews),
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="forma-review-v{revision["number"]}.md"'},
         )
 
     if (settings.frontend_dir / "api-docs").is_dir():

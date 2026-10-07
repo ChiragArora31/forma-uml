@@ -79,8 +79,9 @@ class Component(StrictModel):
         names = [p.name for p in self.parts]
         if len(names) != len(set(names)):
             raise ValueError("Part names must be unique")
-        if any(p.part not in names for p in self.ports):
-            raise ValueError("Every port must connect to an existing part")
+        unknown = [p.part for p in self.ports if p.part not in names]
+        if unknown:
+            raise ValueError(f"Ports reference unknown parts {unknown}. Available parts: {names}")
         return self
 
 
@@ -193,27 +194,36 @@ class Architecture(StrictModel):
             raise ValueError("Component and entity IDs must be unique")
         if len(set(self.states)) != len(self.states):
             raise ValueError("State names must be unique")
-        for x in [*self.connections, *self.interactions]:
-            if x.source not in cids or x.target not in cids:
-                raise ValueError("Connection or interaction references an unknown component")
+        unknown = {
+            ref for x in [*self.connections, *self.interactions] for ref in (x.source, x.target)
+        } - cids
+        issues = []
+        if unknown:
+            issues.append(
+                f"Connection or interaction references unknown component IDs {sorted(unknown)}. Available: {sorted(cids)}"
+            )
         for r in self.relations:
             if r.source not in eids or r.target not in eids:
-                raise ValueError("Relation references an unknown entity")
+                issues.append(
+                    f"Relation references an unknown entity ({r.source}, {r.target}). Available: {sorted(eids)}"
+                )
         if any(s.owner not in cids for s in self.steps):
-            raise ValueError("Workflow step references an unknown owner")
+            issues.append("Workflow step references an unknown owner")
         if any(c not in cids for n in self.nodes for c in n.components):
-            raise ValueError("Deployment references an unknown component")
+            issues.append("Deployment references an unknown component")
         if any(t.component not in cids for t in self.timelines):
-            raise ValueError("Timeline references an unknown component")
+            issues.append("Timeline references an unknown component")
         for t in self.transitions:
             if t.source not in self.states or t.target not in self.states:
-                raise ValueError("Transition references an unknown state")
+                issues.append("Transition references an unknown state")
         for i in self.interactions:
             if i.fragment != "none" and not i.condition:
-                raise ValueError("An interaction fragment requires a condition")
+                issues.append("An interaction fragment requires a condition")
         for s in self.steps:
             if bool(s.guard) != bool(s.alternative):
-                raise ValueError("A guarded workflow step needs an alternative")
+                issues.append("A guarded workflow step needs an alternative")
+        if issues:
+            raise ValueError("; ".join(issues))
         return self
 
 
@@ -225,6 +235,7 @@ class GenerateRequest(StrictModel):
     conversation_id: UUID | None = None
     base_revision: int | None = Field(default=None, ge=1)
     request_id: UUID = Field(default_factory=uuid4)
+    mode: Literal["sample", "live"] | None = None
 
     @field_validator("prompt")
     @classmethod
@@ -259,3 +270,18 @@ class FeedbackRequest(StrictModel):
 
 class SourceRequest(StrictModel):
     source: str = Field(min_length=10, max_length=30000)
+
+
+class ConversationUpdateRequest(StrictModel):
+    title: str | None = Field(default=None, min_length=1, max_length=100)
+    archived: bool | None = None
+
+    @model_validator(mode="after")
+    def meaningful_update(self):
+        if self.title is None and self.archived is None:
+            raise ValueError("Specify a title or archive state")
+        if self.title is not None:
+            self.title = self.title.strip()
+            if not self.title:
+                raise ValueError("A design name cannot be blank")
+        return self
