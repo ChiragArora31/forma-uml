@@ -4,7 +4,7 @@ Verified locally on **7 October 2026**, using macOS/Brave for UI tests and a Lin
 
 | Check | Result |
 | --- | --- |
-| Backend suite (`pytest -q`) | **96 passed** |
+| Backend suite (`pytest -q`) | **97 passed** |
 | Actual PlantUML engine | All **14 diagram types**, each across **3 revisions**; 42 successful source/render cases |
 | Schema and safety validation | Unknown references, duplicate IDs, invalid timelines, source injection, active SVG content, invalid syntax, and missing renderer covered |
 | HTTP/session/storage boundaries | Fresh requests, immutable updates, stale-write protection, retry IDs, foreign-session denial, feedback linkage, and ZIP content covered |

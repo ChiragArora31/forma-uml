@@ -62,7 +62,11 @@ class Part(StrictModel):
 class Port(StrictModel):
     name: str = Field(min_length=1, max_length=60)
     direction: Literal["in", "out"]
-    part: str = Field(min_length=1, max_length=60)
+    part: str = Field(
+        min_length=1,
+        max_length=60,
+        description="Exact name of a part declared in this component's parts, not a type or ID.",
+    )
 
 
 class Component(StrictModel):
@@ -86,8 +90,8 @@ class Component(StrictModel):
 
 
 class Connection(StrictModel):
-    source: str
-    target: str
+    source: str = Field(description="ID declared in components. Never use an actor name or entity ID.")
+    target: str = Field(description="ID declared in components. Never use an actor name or entity ID.")
     label: str = Field(min_length=1, max_length=100)
     kind: Literal["sync", "async", "dependency"]
 
@@ -101,11 +105,11 @@ class Entity(StrictModel):
 
 
 class Relation(StrictModel):
-    source: str
-    target: str
+    source: str = Field(description="ID declared in entities. Service/component IDs are not domain entities.")
+    target: str = Field(description="ID declared in entities. Service/component IDs are not domain entities.")
     kind: Literal["association", "composition", "aggregation", "inheritance"]
-    source_multiplicity: str = Field(pattern=r"^(1|0\.\.1|\*|1\.\.\*|0\.\.\*)$")
-    target_multiplicity: str = Field(pattern=r"^(1|0\.\.1|\*|1\.\.\*|0\.\.\*)$")
+    source_multiplicity: Literal["1", "0..1", "*", "1..*", "0..*"]
+    target_multiplicity: Literal["1", "0..1", "*", "1..*", "0..*"]
     label: str = Field(min_length=1, max_length=80)
 
 
@@ -116,24 +120,37 @@ class Actor(StrictModel):
 
 class Step(StrictModel):
     action: str = Field(min_length=1, max_length=140)
-    owner: str
-    guard: str | None = Field(max_length=100)
-    alternative: str | None = Field(max_length=140)
+    owner: str = Field(
+        description="ID declared in components. Human actions belong to the participating workspace/UI component."
+    )
+    guard: str | None = Field(
+        max_length=100, description="A decision condition; when present, alternative must also be nonempty."
+    )
+    alternative: str | None = Field(
+        max_length=140, description="What happens when the guard is false. Empty only when guard is empty."
+    )
     parallel_actions: list[str] = Field(max_length=4)
 
 
 class Interaction(StrictModel):
-    source: str
-    target: str
+    source: str = Field(
+        description="ID declared in components. Represent external participants as declared components."
+    )
+    target: str = Field(
+        description="ID declared in components. Represent external participants as declared components."
+    )
     message: str = Field(min_length=1, max_length=100)
     kind: Literal["call", "return", "async"]
     fragment: Literal["none", "loop", "alt"]
-    condition: str | None = Field(max_length=100)
+    condition: str | None = Field(
+        max_length=100,
+        description="Required nonempty condition when fragment is loop or alt. Empty is allowed only for none.",
+    )
 
 
 class Transition(StrictModel):
-    source: str
-    target: str
+    source: str = Field(description="Exact state name declared in states.")
+    target: str = Field(description="Exact state name declared in states.")
     event: str = Field(min_length=1, max_length=100)
     guard: str | None = Field(max_length=100)
 
@@ -141,7 +158,7 @@ class Transition(StrictModel):
 class Node(StrictModel):
     name: str = Field(min_length=1, max_length=70)
     kind: Literal["device", "container", "cloud", "database"]
-    components: list[str] = Field(min_length=1, max_length=12)
+    components: list[str] = Field(min_length=1, max_length=12, description="Only IDs declared in components.")
 
 
 class Stereotype(StrictModel):
@@ -157,7 +174,7 @@ class Tick(StrictModel):
 
 
 class Timeline(StrictModel):
-    component: str
+    component: str = Field(description="ID declared in components, never an actor or entity ID.")
     ticks: list[Tick] = Field(min_length=2, max_length=10)
 
     @model_validator(mode="after")
@@ -207,8 +224,11 @@ class Architecture(StrictModel):
                 issues.append(
                     f"Relation references an unknown entity ({r.source}, {r.target}). Available: {sorted(eids)}"
                 )
-        if any(s.owner not in cids for s in self.steps):
-            issues.append("Workflow step references an unknown owner")
+        unknown_owners = sorted({s.owner for s in self.steps} - cids)
+        if unknown_owners:
+            issues.append(
+                f"Workflow step references an unknown owner {unknown_owners}. Available: {sorted(cids)}"
+            )
         if any(c not in cids for n in self.nodes for c in n.components):
             issues.append("Deployment references an unknown component")
         if any(t.component not in cids for t in self.timelines):

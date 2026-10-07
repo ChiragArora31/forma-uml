@@ -148,6 +148,47 @@ async def test_gemini_schema_and_repair_preserve_strict_local_validation():
     assert properties["steps"]["items"]["properties"]["guard"]["type"] == "string"
     assert [m["role"] for m in seen[1]["messages"]] == ["system", "user", "user"]
     assert "not_declared" in seen[1]["messages"][-1]["content"]
+    repair = seen[1]["tools"][0]["function"]["parameters"]["properties"]
+    assert repair["connections"]["items"]["properties"]["source"]["enum"] == [
+        c["id"] for c in BASE["components"]
+    ]
+    assert repair["relations"]["items"]["properties"]["target"]["enum"] == [e["id"] for e in BASE["entities"]]
+    assert repair["nodes"]["items"]["properties"]["components"]["items"]["enum"] == [
+        c["id"] for c in BASE["components"]
+    ]
+
+
+async def test_gemini_exhausts_bounded_repairs_without_accepting_unknown_actors():
+    seen = []
+    invalid = copy.deepcopy(BASE)
+    invalid["steps"][0]["owner"] = "undeclared_actor"
+
+    async def handle(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json=completion(invalid))
+
+    settings = Settings(
+        _env_file=None,
+        api_key="test-key",
+        model="gemini-test",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    )
+    live = LiveProvider(settings)
+    live.llm = ChatOpenAI(
+        model=settings.model,
+        **live.options,
+        http_async_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)),
+    )
+    with pytest.raises(ProviderError, match="consistent design"):
+        await live.generate(SEBI_PROMPT, None, [])
+    assert len(seen) == 3
+    assert "undeclared_actor" in seen[1]["messages"][-1]["content"]
+    assert (
+        "undeclared_actor"
+        not in seen[1]["tools"][0]["function"]["parameters"]["properties"]["steps"]["items"]["properties"][
+            "owner"
+        ]["enum"]
+    )
 
 
 def test_identifier_normalization_never_invents_missing_references():

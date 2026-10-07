@@ -116,6 +116,51 @@ def gemini_schema(schema):
     return result
 
 
+def constrain_repair_references(schema, candidate):
+    """Repair known references using provider-enforced enums; do not invent missing facts."""
+    if not isinstance(candidate, dict):
+        return
+    references = {}
+    for group in ("components", "entities"):
+        items = candidate.get(group)
+        if isinstance(items, list) and items and all(isinstance(c, dict) for c in items):
+            ids = [c.get("id") for c in items]
+            if all(isinstance(i, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,39}", i) for i in ids):
+                references[group] = list(dict.fromkeys(ids))
+    states = candidate.get("states")
+    if isinstance(states, list) and states and all(isinstance(s, str) and s for s in states):
+        references["states"] = list(dict.fromkeys(states))
+    paths = {
+        "components": [
+            ("connections", "source"),
+            ("connections", "target"),
+            ("interactions", "source"),
+            ("interactions", "target"),
+            ("steps", "owner"),
+            ("timelines", "component"),
+        ],
+        "entities": [("relations", "source"), ("relations", "target")],
+        "states": [("transitions", "source"), ("transitions", "target")],
+    }
+    for group, fields in paths.items():
+        if group in references:
+            for category, field in fields:
+                schema["properties"][category]["items"]["properties"][field]["enum"] = references[group]
+    if "components" in references:
+        schema["properties"]["nodes"]["items"]["properties"]["components"]["items"]["enum"] = references[
+            "components"
+        ]
+
+
+def validation_details(error):
+    if isinstance(error, ValidationError):
+        return json.dumps(
+            [{"field": list(e["loc"]), "message": e["msg"]} for e in error.errors()[:32]],
+            ensure_ascii=False,
+        )[:6000]
+    return str(error)[:1800]
+
+
 class Provider(Protocol):
     async def generate(self, prompt: str, previous: Architecture | None, feedback: list[dict]) -> dict: ...
 
@@ -177,6 +222,7 @@ class LiveProvider:
         active_name = self.model_name
         active_llm = self.llm
         used_fallback = False
+        repair_candidate = None
         try:
             async with asyncio.timeout(self.timeout):
                 for _ in range(3 if self.gemini else 2):
@@ -185,6 +231,7 @@ class LiveProvider:
                             if self.gemini:
                                 tool = convert_to_openai_tool(Architecture)
                                 tool["function"]["parameters"] = gemini_schema(tool["function"]["parameters"])
+                                constrain_repair_references(tool["function"]["parameters"], repair_candidate)
                                 raw = await active_llm.bind_tools([tool], tool_choice="required").ainvoke(
                                     messages
                                 )
@@ -235,12 +282,16 @@ class LiveProvider:
                         }
                     if self.gemini:
                         # A fresh repair context avoids replaying stripped Gemini thought signatures.
+                        repair_candidate = (
+                            normalize_identifiers(raw.tool_calls[0]["args"]) if raw.tool_calls else None
+                        )
                         messages.append(
                             HumanMessage(
                                 content="The previous candidate was invalid: "
                                 + json.dumps([c.get("args") for c in raw.tool_calls])[:50000]
                                 + ". Return a complete corrected Architecture. Validation errors: "
-                                + str(result.get("parsing_error"))[:1800]
+                                + validation_details(result.get("parsing_error"))
+                                + ". Preserve the declared component/entity IDs and state names; references must use the tool's allowed enums. Do not use actor IDs in component fields."
                             )
                         )
                         continue
@@ -253,7 +304,7 @@ class LiveProvider:
                         HumanMessage(
                             content="The design failed schema/reference validation. "
                             "Return a corrected complete Architecture. Validation errors: "
-                            + str(result.get("parsing_error"))[:1800]
+                            + validation_details(result.get("parsing_error"))
                         )
                     )
         except TimeoutError as e:
@@ -265,5 +316,5 @@ class LiveProvider:
                 "Live AI could not finish this request. Your draft and saved revisions are safe; retry or explore the case study."
             ) from e
         raise ProviderError(
-            "The model could not produce a consistent design after a repair. Your draft is kept; try a clearer brief."
+            "The AI could not verify a consistent design. Your draft is saved; retry or explore the instant case study."
         ) from result.get("parsing_error")
