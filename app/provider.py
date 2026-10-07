@@ -64,13 +64,15 @@ class SampleProvider:
 
 class LiveProvider:
     def __init__(self, settings: Settings):
-        if not settings.api_key:
-            raise ProviderError("Live mode requires FORMA_API_KEY")
+        gateway = settings.base_url == "https://ai-gateway.vercel.sh/v1"
+        credential = settings.api_key or (settings.oidc_token if gateway else "")
+        if not credential:
+            raise ProviderError("Live mode requires FORMA_API_KEY or Vercel Gateway OIDC")
         self.model_name = settings.model
         self.timeout = settings.generation_timeout
         self.llm = ChatOpenAI(
             model=settings.model,
-            api_key=settings.api_key,
+            api_key=credential,
             base_url=settings.base_url,
             temperature=0.2,
             timeout=settings.generation_timeout,

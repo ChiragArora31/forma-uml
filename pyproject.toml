@@ -4,8 +4,13 @@ version = "0.1.0"
 description = "A conversational UML design workspace with verifiable diagrams and ART feedback"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-  "fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "pydantic-settings>=2.8,<3",
-  "langgraph>=0.6,<2", "langchain-openai>=0.3,<2", "defusedxml>=0.7,<1"
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "pydantic-settings>=2.8,<3",
+  "langgraph>=0.6,<2",
+  "langchain-openai>=0.3,<2",
+  "defusedxml>=0.7,<1",
+  "psycopg[binary]>=3.2,<4",
 ]
 [project.optional-dependencies]
 training = ["openpipe-art[langgraph]>=0.5,<1"]

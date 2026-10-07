@@ -5,13 +5,15 @@
 
 A conversational UML workspace: describe a system, explore a consistent blueprint, and refine it without losing the history.
 
-**React + TypeScript · FastAPI · LangGraph / LangChain · PlantUML · SQLite · OpenPipe ART**
+**React + TypeScript · FastAPI · LangGraph / LangChain · PlantUML · SQLite / PostgreSQL · OpenPipe ART**
 
 </div>
 
 ![Forma workspace](docs/screenshots/workspace.png)
 
 Built for the [OnFinance assignment](https://p.ip.fi/UiOJ). The deliverable is a **software-design chat platform**; the SEBI compliance pipeline is the supplied example design, not a claim that this repository implements regulatory ingestion or legal analysis.
+
+**Hosted review:** [Open Forma](https://forma-uml-chiragarora1831-gmailcoms-projects.vercel.app) · The hosted build currently runs the explicitly labelled, no-key sample. Live provider access is a separate configuration and verification step.
 
 ## Try it in five minutes
 
@@ -69,6 +71,10 @@ Live mode accepts arbitrary software briefs and incremental or replacement speci
 
 The default is [GPT-4.1 mini](https://developers.openai.com/api/docs/models/gpt-4.1-mini), chosen for tool calling and non-reasoning latency. The model and endpoint are configurable. The interface is not coupled to this model. Credentials never go to the browser, exports, or Git.
 
+## Hosted deployment
+
+The same application can run on Vercel with `Dockerfile.vercel`: Java and Graphviz remain private inside the container, while Neon PostgreSQL preserves designs, revisions, reviews, and the training outbox across instance restarts. Local startup still defaults to SQLite. See [deployment instructions](docs/deployment.md) for migration order, configuration, free-tier limits, and verification.
+
 ## How the assignment is covered
 
 | Ask | Implementation | Evidence |
@@ -79,7 +85,7 @@ The default is [GPT-4.1 mini](https://developers.openai.com/api/docs/models/gpt-
 | Generate and render UML in the UI | Deterministic PlantUML compiler, private local renderer, sanitized SVG canvas, source preview and exports | 14 real-engine cases, each tested across 3 revisions |
 | Verify syntax | Typed schema/reference validation, compiler text escaping, actual engine validation; no partial revision if any diagram fails | Model, injection, renderer, and atomicity tests |
 | Minimize latency | One design generation for all views; bounded parallel rendering; source-hash LRU cache and identical-render deduplication; SSE progress | Reported design/render/total timings; [architecture notes](docs/architecture.md) |
-| Collect and store RL feedback | SQLite transaction with context, historical rating, diagrams, completion metadata, and retryable delivery/training states | Feedback and training tests |
+| Collect and store RL feedback | Transactional storage with context, historical rating, diagrams, completion metadata, and retryable delivery/training states | Feedback and training tests |
 
 The minimum request shape from the assignment works directly, including `sequential` as an alias for `sequence`. Request IDs are optional at the API boundary; the UI supplies them for idempotent retries. Existing conversations additionally require `conversation_id` and `base_revision`.
 
@@ -153,9 +159,9 @@ See [verification notes](docs/verification.md) for the checks actually run, and 
 
 ## Scope and production boundaries
 
-This is a take-home implementation intended for local review. Anonymous browser-session isolation is implemented; enterprise login, organization permissions, managed session expiry, and account recovery are deliberately outside scope. Use one Uvicorn worker: in-flight admission controls and the render cache are process-local. A production deployment needs durable job scheduling, proper identity, HTTPS, stronger quotas, tenant retention controls, and a managed rendering service.
+This is a take-home implementation with local and hosted deployment paths. Anonymous browser-session isolation is implemented; enterprise login, organization permissions, managed session expiry, and account recovery are outside scope. Generation admission uses expiring database leases shared across instances. Renderer caching, source-preview admission, and lightweight request-rate counters remain per instance. A larger deployment should add proper identity, shared request quotas, durable job scheduling, tenant retention controls, and a managed rendering service.
 
-The application stores designs and feedback in `.data/forma.sqlite3`. Clearing the browser's session cookie loses access to the anonymous workspace; the server records remain. Source previews are not saved edits. Feedback exports can contain proprietary designs; keep them in ignored `.data/` storage. The project includes no email content, credentials, or employer data.
+Local designs and feedback live in `.data/forma.sqlite3`. When `DATABASE_URL` is configured, PostgreSQL becomes the durable store; versioned migrations must run before deployment. Clearing the browser's session cookie loses access to the anonymous workspace; server records remain. Source previews are not saved edits. Feedback exports can contain proprietary designs; keep them in ignored `.data/` storage. The project includes no email content, credentials, or employer data.
 
 The project implements UML design generation, not full compliance analysis, formal UML verification, or an already-trained specialized model. Live commercial generation and remote GPU training require separately configured credentials; verification status is documented rather than implied.
 
@@ -169,7 +175,9 @@ app/
   compiler.py     Pure PlantUML projections for all fourteen diagram types
   renderer.py     SANDBOX rendering, limits, SVG sanitation, cache
   store.py        Session-owned revision persistence, feedback, durable outbox
-  main.py         HTTP API, SSE, export, built UI serving
+  main.py         HTTP API, SSE, streamed export/history, built UI serving
+  migrate.py      Versioned hosted PostgreSQL migrations
+  postgres.py     Parameterized query adapter for the shared store
   training.py     Outbox export and ART trainable-policy training worker
 frontend/src/     React workspace, canvas, source preview, reviews
 scripts/          Checksum-verified setup and local launch

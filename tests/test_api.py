@@ -127,7 +127,7 @@ def test_feedback_keeps_previous_design_for_revision_scenario(client, app):
     )
     client.post("/api/feedback", json={"revision_id": second["id"], "rating": 3})
     with app.state.store.db() as db:
-        payload = json.loads(db.execute("SELECT payload FROM training_outbox").fetchone()[0])
+        payload = json.loads(db.execute("SELECT payload FROM training_outbox").fetchone()["payload"])
         assert payload["previous_design"] == first["architecture"]
 
 

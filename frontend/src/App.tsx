@@ -388,8 +388,10 @@ export default function App() {
               <Layers size={16} />
             </span>
             <div>
-              <strong>Your local workspace</strong>
-              <small>Saved privately in this browser session</small>
+              <strong>
+                {session.storage === 'postgres' ? 'Your design workspace' : 'Your local workspace'}
+              </strong>
+              <small>Saved for this browser session</small>
             </div>
           </div>
         </div>

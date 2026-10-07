@@ -26,9 +26,21 @@ def fake_renderer():
 
 
 @pytest.fixture
-def app(tmp_path, fake_renderer):
+def app(tmp_path, fake_renderer, request):
+    dsn = (
+        "postgresql://postgres:forma-test@127.0.0.1:5438/forma_test"
+        if request.config.getoption("--postgres")
+        else None
+    )
+    if dsn:
+        import psycopg
+
+        with psycopg.connect(dsn) as db:
+            db.execute(
+                "TRUNCATE training_outbox, feedback, revisions, conversations, generation_leases CASCADE"
+            )
     return create_app(
-        Settings(data_dir=tmp_path, frontend_dir=Path("/not-built")),
+        Settings(_env_file=None, database_url=dsn, data_dir=tmp_path, frontend_dir=Path("/not-built")),
         provider=SampleProvider(),
         renderer=fake_renderer,
     )
@@ -40,3 +52,17 @@ def client(app):
         client.get("/api/session")
         client.headers["X-Forma-Request"] = "1"
         yield client
+
+
+@pytest.fixture
+def admission_database(app):
+    # The app fixture resets only the explicitly selected disposable local database.
+    return app.state.store.database_url
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--postgres",
+        action="store_true",
+        help="Run API boundaries against the disposable local Postgres test database",
+    )

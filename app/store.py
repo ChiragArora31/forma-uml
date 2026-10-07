@@ -24,7 +24,11 @@ def fingerprint(data):
 
 
 class Store:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, database_url: str | None = None):
+        self.database_url = database_url
+        if database_url:
+            self.path = "postgres"
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = str(path)
         with self.db() as db:
@@ -52,6 +56,9 @@ class Store:
                 payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued',
                 attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS generation_leases (
+                owner TEXT PRIMARY KEY, request_id TEXT NOT NULL, expires_at DOUBLE PRECISION NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS conversations_owner ON conversations(owner, updated_at);
             CREATE INDEX IF NOT EXISTS revisions_conversation ON revisions(conversation_id, number);
             CREATE INDEX IF NOT EXISTS feedback_revision ON feedback(revision_id);
@@ -59,17 +66,29 @@ class Store:
 
     @contextmanager
     def db(self):
-        db = sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA foreign_keys=ON")
+        if self.database_url:
+            import psycopg
+            from psycopg.rows import dict_row
+
+            from app.postgres import PostgresConnection
+
+            connection = psycopg.connect(
+                self.database_url, connect_timeout=10, row_factory=dict_row, prepare_threshold=None
+            )
+            db = PostgresConnection(connection)
+        else:
+            connection = sqlite3.connect(self.path, timeout=10)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys=ON")
+            db = connection
         try:
             yield db
-            db.commit()
+            connection.commit()
         except BaseException:
-            db.rollback()
+            connection.rollback()
             raise
         finally:
-            db.close()
+            connection.close()
 
     def list_conversations(self, owner):
         with self.db() as db:
@@ -139,7 +158,9 @@ class Store:
             cid = str(request.conversation_id) if request.conversation_id else str(uuid4())
             if request.conversation_id:
                 current = db.execute(
-                    "SELECT latest FROM conversations WHERE id=? AND owner=?", (cid, owner)
+                    "SELECT latest FROM conversations WHERE id=? AND owner=?"
+                    + (" FOR UPDATE" if self.database_url else ""),
+                    (cid, owner),
                 ).fetchone()
                 if not current:
                     raise NotFound("Conversation not found")
@@ -272,3 +293,23 @@ class Store:
                 "SELECT id FROM feedback WHERE revision_id=? AND owner=? ORDER BY created_at", (rid, owner)
             ).fetchall()
             return [self.feedback_result(db, x["id"]) for x in rows]
+
+    def claim_generation(self, owner, request_id, maximum=4):
+        import time
+
+        with self.db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if self.database_url:
+                # Transaction-scoped across every container; does not require session affinity.
+                db.execute("SELECT pg_advisory_xact_lock(687076266)")
+            stamp = time.time()
+            db.execute("DELETE FROM generation_leases WHERE expires_at<=?", (stamp,))
+            if db.execute("SELECT 1 FROM generation_leases WHERE owner=?", (owner,)).fetchone():
+                raise Conflict("A design is already in progress. Please wait for it to finish.")
+            if db.execute("SELECT COUNT(*) AS count FROM generation_leases").fetchone()["count"] >= maximum:
+                raise Conflict("All design workers are busy. Please retry shortly.")
+            db.execute("INSERT INTO generation_leases VALUES (?,?,?)", (owner, request_id, stamp + 300))
+
+    def release_generation(self, owner, request_id):
+        with self.db() as db:
+            db.execute("DELETE FROM generation_leases WHERE owner=? AND request_id=?", (owner, request_id))

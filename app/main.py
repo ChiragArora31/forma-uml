@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings
@@ -29,7 +29,7 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
     settings = settings or Settings()
     if settings.mode not in {"sample", "live"}:
         raise ValueError("FORMA_MODE must be sample or live")
-    store = Store(settings.data_dir / "forma.sqlite3")
+    store = Store(settings.data_dir / "forma.sqlite3", database_url=settings.database_url)
     renderer = renderer or Renderer(
         settings.plantuml_jar, settings.java, settings.render_timeout, settings.render_concurrency
     )
@@ -100,6 +100,7 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
         response = JSONResponse(
             {
                 "mode": settings.mode,
+                "storage": "postgres" if settings.database_url else "sqlite",
                 "model": settings.model if settings.mode == "live" else None,
                 "sample_prompt": SEBI_PROMPT,
                 "sample_updates": [ASYNC_PROMPT, APPROVAL_PROMPT],
@@ -131,7 +132,21 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
 
     @app.get("/api/conversations/{cid}")
     async def conversation(cid: UUID, uid=Depends(owner)):
-        return await asyncio.to_thread(store.conversation, uid, str(cid))
+        result = await asyncio.to_thread(store.conversation, uid, str(cid))
+
+        async def history():
+            # Batch small JSON tokens; stream large histories without a platform payload cap.
+            parts, size = [], 0
+            for part in json.JSONEncoder(ensure_ascii=False).iterencode(result):
+                parts.append(part)
+                size += len(part)
+                if size >= 65536:
+                    yield "".join(parts)
+                    parts, size = [], 0
+            if parts:
+                yield "".join(parts)
+
+        return StreamingResponse(history(), media_type="application/json")
 
     def sse(event, data):
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -158,6 +173,9 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
             raise HTTPException(409, "A design is already in progress. Please wait for it to finish.")
         if len(active) >= settings.max_active_generations:
             raise HTTPException(429, "All design workers are busy. Please retry shortly.")
+        await asyncio.to_thread(
+            store.claim_generation, uid, str(payload.request_id), settings.max_active_generations
+        )
         active.add(key)
         owners_active.add(uid)
 
@@ -202,6 +220,12 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
             finally:
                 active.discard(key)
                 owners_active.discard(uid)
+                try:
+                    await asyncio.shield(
+                        asyncio.to_thread(store.release_generation, uid, str(payload.request_id))
+                    )
+                except Exception:
+                    logger.warning("Generation lease will expire for request %s", payload.request_id)
 
         return StreamingResponse(
             stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
@@ -252,8 +276,14 @@ def create_app(settings: Settings | None = None, provider=None, renderer=None):
                 f"Mode: {revision['mode']}\n\n{revision['architecture']['summary']}\n\n"
                 "All diagrams were compiled and syntax-validated with PlantUML. Semantic correctness requires human review.\n",
             )
-        return Response(
-            output.getvalue(),
+
+        async def archive_chunks():
+            output.seek(0)
+            while chunk := output.read(65536):
+                yield chunk
+
+        return StreamingResponse(
+            archive_chunks(),
             media_type="application/zip",
             headers={
                 "Content-Disposition": f'attachment; filename="forma-revision-{revision["number"]}.zip"'

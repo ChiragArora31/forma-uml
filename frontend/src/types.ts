@@ -21,6 +21,7 @@ export interface CatalogEntry {
 }
 export interface Session {
   mode: 'sample' | 'live';
+  storage: 'sqlite' | 'postgres';
   model: string | null;
   sample_prompt: string;
   sample_updates: string[];

@@ -38,7 +38,7 @@ def completion(design, name="Architecture"):
 
 
 def provider(transport):
-    instance = LiveProvider(Settings(api_key="test-key", model="test-model"))
+    instance = LiveProvider(Settings(_env_file=None, api_key="test-key", model="test-model"))
     instance.llm = ChatOpenAI(
         model="test-model",
         api_key="test-key",
@@ -103,4 +103,15 @@ async def test_provider_failure_never_silently_falls_back_to_sample():
 
 def test_live_mode_requires_explicit_credentials():
     with pytest.raises(ProviderError, match="FORMA_API_KEY"):
-        LiveProvider(Settings(api_key=""))
+        LiveProvider(Settings(_env_file=None, api_key=""))
+
+
+def test_gateway_oidc_is_never_forwarded_to_a_different_provider():
+    with pytest.raises(ProviderError, match="FORMA_API_KEY"):
+        LiveProvider(
+            Settings(
+                _env_file=None,
+                oidc_token="test-oidc",
+                base_url="https://unrelated.invalid/v1",
+            )
+        )

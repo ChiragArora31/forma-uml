@@ -4,16 +4,19 @@ Verified locally on **7 October 2026**, using macOS/Brave for UI tests and a Lin
 
 | Check | Result |
 | --- | --- |
-| Backend suite (`pytest -q`) | **72 passed** |
+| Backend suite (`pytest -q`) | **75 passed** |
 | Actual PlantUML engine | All **14 diagram types**, each across **3 revisions**; 42 successful source/render cases |
 | Schema and safety validation | Unknown references, duplicate IDs, invalid timelines, source injection, active SVG content, invalid syntax, and missing renderer covered |
 | HTTP/session/storage boundaries | Fresh requests, immutable updates, stale-write protection, retry IDs, foreign-session denial, feedback linkage, and ZIP content covered |
 | Live LangChain path | Real SDK with mocked HTTP transport: structured generation, prior-design/feedback context, malformed-output repair, sanitized provider failure |
 | ART integration | Actual installed ART LangGraph wrapper captures a LangChain completion and log probabilities from a fixture transport; model/trajectory/backend API contract verified |
 | Training data path | Context-preserving export, sample exclusion, retryable delivery, atomic worker claim, and unknown-outcome reconciliation covered |
+| PostgreSQL | 23 API boundary tests and 2 admission tests against a disposable local PostgreSQL database; hosted Neon persistence smoke passed across app instances |
+| Generation admission | Shared owner/global leases, exact-request release, and stale lease expiry covered |
 | Frontend | TypeScript check, production build, Prettier check: passed |
 | Browser | **3 production-server journeys passed**: full review flow, mobile/error handling, locally bundled API docs under the content security policy |
 | Accessibility | Zero axe violations in the scanned welcome, generated workspace, and review dialog views |
+| Vercel hosting | Public production health and real rendering verified; all 3 browser journeys also passed on Vercel with Neon persistence |
 | Container | Image builds with locked dependencies, checksum-verified PlantUML, non-root execution, and local host binding; generation/export smoke test passed |
 | Dependency check | npm audit reported zero vulnerabilities at verification time |
 | Original workspace | Existing `agent-orchestrator` checkout left unchanged |
@@ -39,7 +42,7 @@ Reproduce with `uv run python -m scripts.benchmark` after setup. These are deter
 
 ## External verification limits
 
-**No remote model generation was executed:** a provider credential was not supplied. The live path is implemented and integration-tested with realistic mocked provider responses, but real provider access, model output quality, latency, and billing are unverified.
+**No successful remote model generation was executed:** Gateway authentication was checked, but Vercel rejected inference because account verification was required. No credits were purchased. A free-tier provider credential remains required for live hosting. The live path is implemented and integration-tested with realistic mocked provider responses, but real provider access, model output quality, latency, and billing are unverified.
 
 **No GPU training was executed:** a W&B Training credential/account was not supplied. The ART adapter and durable feedback path are tested; no trained checkpoint or measured model improvement is claimed. The explicit training command requires the configured backend and judge credentials. Promotion of a resulting checkpoint is a separate documented step.
 

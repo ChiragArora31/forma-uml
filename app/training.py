@@ -286,7 +286,7 @@ def main():
     trainer.add_argument("--learning-rate", type=float, default=5e-6)
     args = parser.parse_args()
     settings = Settings()
-    store = Store(settings.data_dir / "forma.sqlite3")
+    store = Store(settings.data_dir / "forma.sqlite3", database_url=settings.database_url)
     if args.command == "export":
         print(
             f"Exported {export_scenarios(store, args.output, args.include_samples)} reviewed scenarios to {args.output}"
