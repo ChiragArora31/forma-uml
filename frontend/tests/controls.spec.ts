@@ -133,6 +133,20 @@ test('starter briefs, quota mode, selection controls, and cancellation keep user
 }) => {
   await exposeLiveControls(page);
   await page.goto('/');
+  const input = page.getByLabel('Describe your software design');
+  const send = page.getByRole('button', { name: 'Send design request' });
+  await expect(input).toBeEnabled();
+  await expect(send).toBeDisabled();
+  await expect(
+    page.getByText('Type your brief above (at least 10 characters) to enable Send.'),
+  ).toBeVisible();
+  await input.fill('queue');
+  await expect(send).toBeDisabled();
+  await expect(page.getByText('Add 5 more characters to enable Send.')).toBeVisible();
+  await input.fill('Add queues');
+  await expect(send).toBeEnabled();
+  await input.fill('          ');
+  await expect(send).toBeDisabled();
   await page.getByRole('button', { name: 'Start your own design' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);

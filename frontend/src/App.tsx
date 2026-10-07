@@ -368,7 +368,8 @@ export default function App() {
       opening ||
       input.length < 10 ||
       !selectedTypes.length ||
-      conversation?.archived
+      conversation?.archived ||
+      (mode === 'live' && allowance?.remaining === 0)
     )
       return;
     const latest = conversation?.revisions.at(-1);
@@ -543,6 +544,22 @@ export default function App() {
       </div>
     );
   const isHistoric = conversation && revisionIndex < conversation.revisions.length - 1;
+  const briefLength = prompt.trim().length;
+  const sendDisabledReason = busy
+    ? 'Your design is being generated.'
+    : opening
+      ? 'Opening this design…'
+      : conversation?.archived
+        ? 'Restore this design to enter a new request.'
+        : briefLength === 0
+          ? 'Type your brief above (at least 10 characters) to enable Send.'
+          : briefLength < 10
+            ? `Add ${10 - briefLength} more character${10 - briefLength === 1 ? '' : 's'} to enable Send.`
+            : !types.length
+              ? 'Choose at least one UML view to enable Send.'
+              : requestMode === 'live' && allowance?.remaining === 0
+                ? 'Today’s free AI allowance is used. You can explore a new case study.'
+                : '';
 
   return (
     <div className="app-shell">
@@ -905,9 +922,14 @@ export default function App() {
                 </button>
               </div>
               <div className="composer">
+                <label className="composer-label" htmlFor="design-brief">
+                  {conversation ? 'Your next request' : 'Your design brief'}
+                </label>
                 <textarea
+                  id="design-brief"
                   ref={textarea}
                   aria-label="Describe your software design"
+                  aria-describedby="composer-guidance"
                   placeholder={
                     conversation
                       ? 'What would you like to change?'
@@ -925,25 +947,19 @@ export default function App() {
                   }}
                 />
                 <div className="composer-footer">
-                  <span>
-                    {prompt.length
-                      ? `${prompt.length.toLocaleString()} / 12,000`
-                      : 'Your brief is saved as you type.'}
+                  <span id="composer-guidance">
+                    {sendDisabledReason ||
+                      `${prompt.length.toLocaleString()} / 12,000 · Draft saved`}
                   </span>
                   <button
                     className="send-button"
                     aria-label="Send design request"
-                    disabled={
-                      busy ||
-                      opening ||
-                      !!conversation?.archived ||
-                      prompt.trim().length < 10 ||
-                      !types.length ||
-                      (requestMode === 'live' && allowance?.remaining === 0)
-                    }
+                    title={sendDisabledReason || 'Send your design request'}
+                    disabled={!!sendDisabledReason}
                     onClick={() => void send()}
                   >
                     {busy ? <Loader2 size={17} className="spin" /> : <ArrowUp size={18} />}
+                    <span>Send</span>
                   </button>
                 </div>
               </div>
