@@ -44,7 +44,6 @@ import type {
   Session,
 } from './types';
 import DiagramCanvas from './DiagramCanvas';
-import WelcomeCanvas from './WelcomeCanvas';
 import HelpGuide from './HelpGuide';
 import DiagramPicker from './DiagramPicker';
 import ReviewForm from './ReviewForm';
@@ -701,61 +700,26 @@ export default function App() {
             </button>
           </div>
         </header>
-        <div className="workspace">
+        <div className={`workspace ${!revision ? 'workspace-empty' : ''}`}>
           <section className="conversation-panel" aria-label="Design conversation">
             <div className="panel-heading">
               <div>
                 <MessageSquare size={16} />
-                <h2>Design conversation</h2>
+                <h2>{conversation ? 'Refine your design' : 'New design'}</h2>
               </div>
               <span className="tiny-label">
                 {conversation ? `${conversation.revisions.length} ITERATIONS` : 'LET’S BEGIN'}
               </span>
             </div>
             <div className="conversation-feed" ref={feed}>
-              <div className="intro-message">
-                <div className="speaker">
-                  <Mark small />
-                  <strong>Forma</strong>
-                  <span>YOUR DESIGN PARTNER</span>
-                </div>
-                <p>Good software starts with a clear picture.</p>
-                <p className="muted">
-                  Describe what you’re building. We’ll turn the brief into a connected set of UML
-                  diagrams, then refine the design together.
-                </p>
-              </div>
-              {!conversation && !busy && (
-                <div className="sample-brief">
-                  <div className="eyebrow">
-                    <span className="sample-dot" /> A GOOD PLACE TO START
-                  </div>
-                  <h3>
-                    Regulatory compliance,
-                    <br />
-                    mapped from end to end.
-                  </h3>
-                  <p>SEBI circulars → clause extraction → control gaps → organizational impact.</p>
-                  <button
-                    onClick={() => {
-                      setPrompt(session.sample_prompt);
-                      textarea.current?.focus();
-                    }}
-                  >
-                    Use the assignment brief <ArrowUpRight size={15} />
-                  </button>
-                  {session.mode === 'live' && (
-                    <div className="starter-briefs">
-                      <span className="tiny-label">OR START WITH A DIFFERENT SYSTEM</span>
-                      {STARTERS.map((starter) => (
-                        <button key={starter.title} onClick={() => startBrief(starter.prompt)}>
-                          <span>{starter.category}</span>
-                          {starter.title}
-                          <ArrowUpRight size={13} />
-                        </button>
-                      ))}
-                    </div>
-                  )}
+              {!conversation && (
+                <div className="start-intro">
+                  <span className="eyebrow">FROM A BRIEF TO A BLUEPRINT</span>
+                  <h1>What would you like to design?</h1>
+                  <p>
+                    Describe your requirements and constraints. We’ll turn them into a consistent
+                    software architecture.
+                  </p>
                 </div>
               )}
               {conversation?.revisions.map((r, i) => (
@@ -769,7 +733,10 @@ export default function App() {
                       <strong>You</strong>
                       <time>{formatTime(r.created_at)}</time>
                     </div>
-                    <p>{r.prompt}</p>
+                    <details className="request-details">
+                      <summary>View your request</summary>
+                      <p>{r.prompt}</p>
+                    </details>
                   </div>
                   <div className="assistant-message">
                     <div className="speaker">
@@ -870,34 +837,45 @@ export default function App() {
                   </button>
                 </div>
               ) : session.mode === 'live' ? (
-                <div className="generation-choice">
-                  <div role="group" aria-label="Generation mode">
-                    <button
-                      aria-pressed={requestMode === 'live'}
-                      disabled={busy}
-                      onClick={() => setRequestMode('live')}
-                    >
-                      Live AI
-                    </button>
-                    <button
-                      aria-pressed={requestMode === 'sample'}
-                      disabled={busy || conversation?.revisions.at(-1)?.mode === 'live'}
-                      title={
-                        conversation?.revisions.at(-1)?.mode === 'live'
-                          ? 'Start a new design to explore the curated case study'
-                          : 'Use the curated SEBI workflow'
-                      }
-                      onClick={() => setRequestMode('sample')}
-                    >
-                      Case study
-                    </button>
+                <details className="generation-options">
+                  <summary aria-label="Generation options">
+                    <span>{requestMode === 'live' ? 'Live AI' : 'Curated case study'}</span>
+                    <small>
+                      {requestMode === 'live'
+                        ? `${allowance?.remaining ?? '…'} free attempts available today`
+                        : 'Instant example · no AI quota used'}
+                    </small>
+                    <ChevronDown size={13} />
+                  </summary>
+                  <div className="generation-choice">
+                    <div role="group" aria-label="Generation mode">
+                      <button
+                        aria-pressed={requestMode === 'live'}
+                        disabled={busy}
+                        onClick={() => setRequestMode('live')}
+                      >
+                        Live AI
+                      </button>
+                      <button
+                        aria-pressed={requestMode === 'sample'}
+                        disabled={busy || conversation?.revisions.at(-1)?.mode === 'live'}
+                        title={
+                          conversation?.revisions.at(-1)?.mode === 'live'
+                            ? 'Start a new design to explore the curated case study'
+                            : 'Use the curated SEBI workflow'
+                        }
+                        onClick={() => setRequestMode('sample')}
+                      >
+                        Case study
+                      </button>
+                    </div>
+                    <span>
+                      {requestMode === 'live'
+                        ? `${allowance?.remaining ?? '…'} AI attempts available today`
+                        : 'Instant curated examples · no AI quota used'}
+                    </span>
                   </div>
-                  <span>
-                    {requestMode === 'live'
-                      ? `${allowance?.remaining ?? '…'} AI attempts available today`
-                      : 'Instant curated examples · no AI quota used'}
-                  </span>
-                </div>
+                </details>
               ) : null}
               {isHistoric && (
                 <p className="historic-note">
@@ -906,19 +884,16 @@ export default function App() {
                 </p>
               )}
               <div className="selected-types">
-                <span>VIEWS</span>
-                {types.slice(0, 3).map((t) => (
-                  <button key={t} onClick={() => setModal('diagrams')}>
-                    {label(t)}
-                  </button>
-                ))}
-                {types.length > 3 && <span>+{types.length - 3}</span>}
                 <button
-                  className="type-add"
+                  className="view-request-button"
                   aria-label="Choose UML diagram types"
                   onClick={() => setModal('diagrams')}
                 >
-                  <Plus size={13} />
+                  <Layers size={13} />
+                  {types.length === 2 && types.includes('sequence') && types.includes('component')
+                    ? 'Sequence + Component'
+                    : `${types.length} UML views`}
+                  <ChevronDown size={12} />
                 </button>
               </div>
               <div className="composer">
@@ -970,20 +945,45 @@ export default function App() {
                 <ShieldCheck size={12} />
               </div>
             </div>
+            {!conversation && !busy && (
+              <div className="start-examples">
+                <span className="tiny-label">TRY AN EXAMPLE BRIEF</span>
+                <div className="example-buttons">
+                  <button
+                    aria-label="Use the assignment brief"
+                    onClick={() => {
+                      setPrompt(session.sample_prompt);
+                      textarea.current?.focus();
+                    }}
+                  >
+                    SEBI compliance
+                  </button>
+                  {session.mode === 'live' &&
+                    STARTERS.map((starter) => (
+                      <button key={starter.title} onClick={() => startBrief(starter.prompt)}>
+                        {starter.title}
+                      </button>
+                    ))}
+                </div>
+                <button
+                  className="case-study-link"
+                  onClick={() => void send(session.sample_prompt, types, 'sample')}
+                  disabled={busy}
+                >
+                  Open the SEBI case study <ArrowUpRight size={13} />
+                </button>
+                <p className="case-study-description">
+                  A ready-made example to explore without waiting for AI.
+                </p>
+              </div>
+            )}
           </section>
 
-          <section
-            className={`artifact-panel ${expanded ? 'expanded' : ''}`}
-            aria-label="Design workspace"
-          >
-            {!revision ? (
-              <WelcomeCanvas
-                session={session}
-                busy={busy}
-                onStart={() => void send(session.sample_prompt, types, 'sample')}
-                onCompose={() => setModal('starters')}
-              />
-            ) : (
+          {revision && (
+            <section
+              className={`artifact-panel ${expanded ? 'expanded' : ''}`}
+              aria-label="Design workspace"
+            >
               <>
                 <div className="artifact-heading">
                   <div>
@@ -1008,46 +1008,25 @@ export default function App() {
                   </label>
                 </div>
                 <div className="diagram-tabs-row">
-                  <div className="diagram-tabs" role="tablist" aria-label="Generated UML diagrams">
-                    {revision.diagrams.map((d) => (
-                      <button
-                        id={`tab-${d.type}`}
-                        role="tab"
-                        aria-controls="uml-view-panel"
-                        tabIndex={diagram?.type === d.type ? 0 : -1}
-                        onKeyDown={(e) => {
-                          const index = revision.diagrams.findIndex((item) => item.type === d.type);
-                          const next =
-                            e.key === 'ArrowRight'
-                              ? (index + 1) % revision.diagrams.length
-                              : e.key === 'ArrowLeft'
-                                ? (index - 1 + revision.diagrams.length) % revision.diagrams.length
-                                : e.key === 'Home'
-                                  ? 0
-                                  : e.key === 'End'
-                                    ? revision.diagrams.length - 1
-                                    : -1;
-                          if (next >= 0) {
-                            e.preventDefault();
-                            const nextKind = revision.diagrams[next].type;
-                            setKind(nextKind);
-                            setView('diagram');
-                            document.getElementById(`tab-${nextKind}`)?.focus();
-                          }
-                        }}
-                        aria-selected={diagram?.type === d.type}
-                        className={diagram?.type === d.type ? 'active' : ''}
-                        key={d.type}
-                        onClick={() => {
-                          setKind(d.type);
-                          setView('diagram');
-                        }}
-                      >
-                        {d.type === 'sequence' ? <Workflow size={14} /> : <Layers size={14} />}
-                        {label(d.type)}
-                      </button>
-                    ))}
-                  </div>
+                  <label className="diagram-view-select">
+                    <Layers size={14} />
+                    <select
+                      aria-label="Select UML view"
+                      value={diagram?.type}
+                      onChange={(e) => {
+                        setKind(e.target.value as DiagramKind);
+                        setView('diagram');
+                      }}
+                    >
+                      {revision.diagrams.map((d) => (
+                        <option value={d.type} key={d.type}>
+                          {label(d.type)}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={12} />
+                  </label>
+                  <span className="view-count">{revision.diagrams.length} verified views</span>
                   <button
                     className="tab-add"
                     aria-label="Change diagrams for next iteration"
@@ -1059,8 +1038,8 @@ export default function App() {
                 <div
                   className="canvas-frame"
                   id="uml-view-panel"
-                  role="tabpanel"
-                  aria-labelledby={`tab-${diagram?.type}`}
+                  role="region"
+                  aria-label={`${diagram ? label(diagram.type) : 'UML'} view`}
                   tabIndex={0}
                   aria-busy={sourceBusy}
                 >
@@ -1363,8 +1342,8 @@ export default function App() {
                   </div>
                 </div>
               </>
-            )}
-          </section>
+            </section>
+          )}
         </div>
         <footer className="app-footer">
           <span>THOUGHTFUL SYSTEMS START HERE.</span>

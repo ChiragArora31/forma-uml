@@ -49,7 +49,7 @@ test('workspace management preserves drafts, revisions, and reversible archives'
   await page.getByRole('button', { name: 'Design settings' }).click();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.getByRole('button', { name: 'Archive design', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'From a brief to a blueprint.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'What would you like to design?' })).toBeVisible();
   await page.getByRole('button', { name: 'Undo archive' }).click();
   await expect(
     page.getByRole('heading', { name: 'SEBI compliance monitor', exact: true }),
@@ -65,7 +65,7 @@ test('workspace management preserves drafts, revisions, and reversible archives'
   await page.getByRole('button', { name: 'Restore', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Send design request' })).toBeEnabled();
   await page.getByRole('button', { name: 'New design', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'From a brief to a blueprint.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'What would you like to design?' })).toBeVisible();
 });
 
 test('all source exports match the selected preview and failures remain readable', async ({
@@ -81,6 +81,8 @@ test('all source exports match the selected preview and failures remain readable
   await page.getByRole('button', { name: 'Fit diagram to canvas' }).click();
   await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
   await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  await page.getByRole('button', { name: 'Reset zoom to 100 percent' }).click();
+  await expect(page.getByRole('button', { name: 'Reset zoom to 100 percent' })).toHaveText('100%');
   await page.getByRole('button', { name: 'Source', exact: true }).click();
   const source = '@startuml\nAlice -> Bob: A reviewed preview\n@enduml';
   await page.getByLabel('PlantUML source editor').fill(source);
@@ -147,13 +149,7 @@ test('starter briefs, quota mode, selection controls, and cancellation keep user
   await expect(send).toBeEnabled();
   await input.fill('          ');
   await expect(send).toBeDisabled();
-  await page.getByRole('button', { name: 'Start your own design' }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: /A reliable document pipeline/ })
-    .click();
+  await page.getByRole('button', { name: /A reliable document pipeline/ }).click();
   await expect(page.getByLabel('Describe your software design')).toHaveValue(
     /document processing platform/,
   );
@@ -185,6 +181,7 @@ test('starter briefs, quota mode, selection controls, and cancellation keep user
   release();
   await expect(page.getByRole('button', { name: 'Stop generation' })).not.toBeVisible();
   await expect(page.getByLabel('Describe your software design')).toHaveValue(draft);
+  await page.getByLabel('Generation options').click();
   await page.getByRole('button', { name: 'Case study', exact: true }).click();
   await expect(page.getByText('Instant curated examples · no AI quota used')).toBeVisible();
 });

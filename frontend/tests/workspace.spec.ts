@@ -11,7 +11,7 @@ test('complete reviewer journey: 14 UML views, revisions, review, source, export
   const consoleErrors: string[] = [];
   page.on('pageerror', (error) => consoleErrors.push(error.message));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'From a brief to a blueprint.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'What would you like to design?' })).toBeVisible();
   await page.screenshot({ path: `${screenshotDir}/welcome.png`, fullPage: true });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
@@ -23,16 +23,17 @@ test('complete reviewer journey: 14 UML views, revisions, review, source, export
   await expect(
     page.getByRole('heading', { name: 'SEBI compliance monitor', exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(14);
-  for (const tab of await page.getByRole('tab').all()) {
-    await tab.click();
+  const views = page.getByLabel('Select UML view');
+  await expect(views.locator('option')).toHaveCount(14);
+  for (const option of await views.locator('option').all()) {
+    await views.selectOption((await option.getAttribute('value'))!);
     const image = page.getByRole('img', { name: /UML diagram/ });
     await expect(image).toBeVisible();
     await expect
       .poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0))
       .toBeTruthy();
   }
-  await page.getByRole('tab', { name: 'Component', exact: true }).click();
+  await page.getByLabel('Select UML view').selectOption('component');
   await page.screenshot({ path: `${screenshotDir}/workspace.png`, fullPage: true });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
@@ -87,7 +88,7 @@ test('complete reviewer journey: 14 UML views, revisions, review, source, export
   await expect(page.getByText('Analysis queue', { exact: true })).toHaveCount(0);
   await page.getByLabel('Select revision').selectOption('2');
   await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-  await page.getByRole('tab', { name: 'Component', exact: true }).click();
+  await page.getByLabel('Select UML view').selectOption('component');
   await page.getByRole('button', { name: 'Expand canvas' }).click();
   await expect(page.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -98,7 +99,7 @@ test('complete reviewer journey: 14 UML views, revisions, review, source, export
 test('mobile layout, keyboard dialog control, and honest sample-mode errors', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'From a brief to a blueprint.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'What would you like to design?' })).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBeTruthy();
@@ -107,8 +108,10 @@ test('mobile layout, keyboard dialog control, and honest sample-mode errors', as
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).not.toBeVisible();
-  if (await page.getByRole('button', { name: 'Case study', exact: true }).isVisible())
+  if (await page.getByLabel('Generation options').isVisible()) {
+    await page.getByLabel('Generation options').click();
     await page.getByRole('button', { name: 'Case study', exact: true }).click();
+  }
   await page
     .getByLabel('Describe your software design')
     .fill('Build a bookstore with checkout and payments');

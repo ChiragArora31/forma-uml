@@ -91,7 +91,17 @@ export default function DiagramCanvas({ svg, label }: { svg: string; label: stri
         <button aria-label="Zoom out" onClick={() => setScale((s) => Math.max(0.1, s / 1.2))}>
           <Minus size={15} />
         </button>
-        <span>{Math.round(scale * 100)}%</span>
+        <button
+          className="zoom-value"
+          aria-label="Reset zoom to 100 percent"
+          title="Read the diagram at 100% size"
+          onClick={() => {
+            setScale(1);
+            setPosition({ x: 0, y: 0 });
+          }}
+        >
+          {Math.round(scale * 100)}%
+        </button>
         <button aria-label="Zoom in" onClick={() => setScale((s) => Math.min(4, s * 1.2))}>
           <Plus size={15} />
         </button>

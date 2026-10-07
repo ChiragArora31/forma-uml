@@ -40,12 +40,12 @@ The app is exposed only on `127.0.0.1:8018`. The named `forma-data` volume prese
 
 ## A short reviewer walkthrough
 
-**Start with the instant case study**, then try **Start your own design** for a live model-generated architecture. The interface shows the remaining free AI allowance before a request; the case study and source previews do not consume it.
+**Enter a brief in the main text box and click Send** for a live model-generated architecture. The example buttons fill the brief without sending it. The separate **Open the SEBI case study** link opens a ready-made example. The interface shows the remaining free AI allowance before a request; the case study and source previews do not consume it.
 
 Rename a design through **Design settings**, archive it to tidy the workspace, and restore it later. Briefs and source-preview edits survive reloads. Mobile users can open their history through **Open workspace**. Export a review brief, a portable ZIP with review snapshots, or individual SVG/PNG/PlantUML files.
 
 1. Click **Open the SEBI case study**. Sequence and component diagrams are the recommended starting pair. Use the diagram chooser to request any or all of the 14 UML views.
-2. Explore the canvas: zoom, pan, fit, and expand. Open **Design notes** for requirements, assumptions, and component responsibilities.
+2. Use the UML view selector to inspect a perspective. Explore the canvas: zoom, pan, fit, expand, or click the zoom percentage to read at 100% size. Open **Design notes** for requirements, assumptions, and component responsibilities.
 3. Click **Add a queue, retries & failure recovery**, then send. A second revision retains the original requirements and adds durable asynchronous processing.
 4. Click **Require officer approval before publication**, then send. The third revision adds an explicit approval boundary and guarded publication lifecycle.
 5. Open **Changes**, then use the version picker to revisit the original design. Updates always build on the latest revision, with stale-write protection.

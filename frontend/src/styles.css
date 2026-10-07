@@ -679,6 +679,156 @@ button:hover:not(:disabled) {
   margin-bottom: 7px;
   cursor: text;
 }
+.workspace-empty {
+  justify-content: center;
+  overflow: auto;
+  padding: 40px 32px;
+}
+.workspace-empty .conversation-panel {
+  width: min(760px, 100%);
+  flex: 0 1 760px;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+.workspace-empty .panel-heading {
+  display: none;
+}
+.workspace-empty .conversation-feed {
+  flex: 0 0 auto;
+  padding: 0;
+  overflow: visible;
+}
+.start-intro {
+  padding: 28px 0 30px;
+}
+.start-intro h1 {
+  font-family: Georgia, serif;
+  font-size: clamp(29px, 3vw, 40px);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -1px;
+  margin: 14px 0;
+  color: var(--green);
+}
+.start-intro p {
+  max-width: 570px;
+  line-height: 1.7;
+  color: #586354;
+  font-size: 14px;
+}
+.workspace-empty .composer-area {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.workspace-empty .composer {
+  padding: 18px;
+}
+.workspace-empty .composer textarea {
+  min-height: 150px;
+  font-size: 15px;
+}
+.start-examples {
+  margin: 26px 0 32px;
+}
+.example-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0 22px;
+}
+.example-buttons button {
+  border: 1px solid var(--line);
+  background: #fffefa;
+  border-radius: 7px;
+  padding: 9px 11px;
+  font-size: 12px;
+  color: var(--green);
+}
+.case-study-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--green);
+}
+.case-study-description {
+  font-size: 11px;
+  color: #65705e;
+  margin-top: 7px;
+}
+.generation-options {
+  margin-bottom: 11px;
+}
+.generation-options > summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  color: #52614d;
+  cursor: pointer;
+  list-style: none;
+}
+.generation-options > summary::-webkit-details-marker {
+  display: none;
+}
+.generation-options small {
+  font-size: 10px;
+  margin-left: auto;
+}
+.generation-options[open] .generation-choice {
+  padding: 12px 0 0;
+}
+.view-request-button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+}
+.request-details summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: #52614d;
+  padding: 8px 0;
+}
+.diagram-view-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green);
+  background: #e6ebdf;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.diagram-view-select select {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  appearance: none;
+  font-size: 12px;
+  max-width: 210px;
+}
+.view-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: #626c5c;
+}
+@media (max-width: 760px) {
+  .workspace-empty {
+    padding: 18px 20px;
+  }
+  .workspace-empty .conversation-panel {
+    width: 100%;
+    min-height: auto;
+  }
+  .start-intro {
+    padding: 8px 0 18px;
+  }
+  .workspace-empty .composer textarea {
+    min-height: 120px;
+  }
+}
 .composer textarea {
   width: 100%;
   min-height: 60px;
