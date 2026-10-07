@@ -1,0 +1,10 @@
+:root {
+  --paper: #f7f7ef;
+  --ink: #344936;
+  --green: #355541;
+  --line: #e0e3d7;
+  --hover: #e9ede0;
+  --sans: Arial, Helvetica, sans-serif;
+  --serif: Georgia, 'Times New Roman', serif;
+  --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+}

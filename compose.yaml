@@ -1,0 +1,15 @@
+services:
+  forma:
+    build: .
+    ports:
+      - "127.0.0.1:8018:8018"
+    environment:
+      FORMA_MODE: ${FORMA_MODE:-sample}
+      FORMA_API_KEY: ${FORMA_API_KEY:-}
+      FORMA_MODEL: ${FORMA_MODEL:-gpt-4.1-mini}
+      FORMA_BASE_URL: ${FORMA_BASE_URL:-https://api.openai.com/v1}
+    volumes:
+      - forma-data:/app/.data
+    restart: unless-stopped
+volumes:
+  forma-data:

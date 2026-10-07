@@ -1,0 +1,7 @@
+{
+  "prompt": "I am working on a compliance monitoring solution which will pull in the latest circulars from SEBI and parse them. Once it is parsed into a table of clauses, extract:\n1. The new compliance requirements proposed by the regulator\n2. Gap analysis with my existing compliance setup\n3. The impact of these new compliance requirements on my organization at an IT and operational level",
+  "diagram_types": [
+    "sequential",
+    "component"
+  ]
+}

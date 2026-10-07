@@ -1,0 +1,31 @@
+{
+  "name": "forma-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "node scripts/copy-api-docs.mjs && tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "test:e2e": "playwright test",
+    "format": "prettier --write src tests scripts public/api-docs/init.js *.ts *.json index.html",
+    "format:check": "prettier --check src tests scripts public/api-docs/init.js *.ts *.json index.html"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "prettier": "^3.6.2",
+    "swagger-ui-dist": "^5.29.5",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.0"
+  }
+}

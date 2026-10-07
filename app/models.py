@@ -1,0 +1,261 @@
+from enum import StrEnum
+from typing import Literal
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+class DiagramType(StrEnum):
+    SEQUENCE = "sequence"
+    COMPONENT = "component"
+    CLASS = "class"
+    OBJECT = "object"
+    COMPOSITE_STRUCTURE = "composite_structure"
+    DEPLOYMENT = "deployment"
+    PACKAGE = "package"
+    PROFILE = "profile"
+    USE_CASE = "use_case"
+    ACTIVITY = "activity"
+    STATE_MACHINE = "state_machine"
+    COMMUNICATION = "communication"
+    INTERACTION_OVERVIEW = "interaction_overview"
+    TIMING = "timing"
+
+
+CATALOG = [
+    ("sequence", "Sequence", "interaction", "Time-ordered calls and responses"),
+    ("component", "Component", "structure", "Services, stores, and their boundaries"),
+    ("class", "Class", "structure", "Domain models, attributes, and relationships"),
+    ("object", "Object", "structure", "An illustrative snapshot of domain instances"),
+    ("composite_structure", "Composite structure", "structure", "Internal parts, ports, and connectors"),
+    ("deployment", "Deployment", "structure", "Runtime nodes and deployed artifacts"),
+    ("package", "Package", "structure", "Layers, namespaces, and dependencies"),
+    ("profile", "Profile", "structure", "Stereotypes, tagged values, and constraints"),
+    ("use_case", "Use case", "behavior", "Actors, goals, and system scope"),
+    ("activity", "Activity", "behavior", "Workflow, decisions, and parallel actions"),
+    ("state_machine", "State machine", "behavior", "States, guarded transitions, and lifecycle"),
+    ("communication", "Communication", "interaction", "Numbered messages between linked participants"),
+    (
+        "interaction_overview",
+        "Interaction overview",
+        "interaction",
+        "Control flow linking named interactions",
+    ),
+    ("timing", "Timing", "interaction", "Illustrative state changes over time"),
+]
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class Member(StrictModel):
+    name: str = Field(min_length=1, max_length=60)
+    type: str = Field(min_length=1, max_length=60)
+
+
+class Part(StrictModel):
+    name: str = Field(min_length=1, max_length=60)
+    type: str = Field(min_length=1, max_length=60)
+
+
+class Port(StrictModel):
+    name: str = Field(min_length=1, max_length=60)
+    direction: Literal["in", "out"]
+    part: str = Field(min_length=1, max_length=60)
+
+
+class Component(StrictModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
+    name: str = Field(min_length=1, max_length=70)
+    responsibility: str = Field(min_length=1, max_length=240)
+    kind: Literal["service", "database", "external", "queue", "ui"]
+    package: str = Field(min_length=1, max_length=60)
+    parts: list[Part] = Field(max_length=8)
+    ports: list[Port] = Field(max_length=8)
+
+    @model_validator(mode="after")
+    def ports_reference_parts(self):
+        names = [p.name for p in self.parts]
+        if len(names) != len(set(names)):
+            raise ValueError("Part names must be unique")
+        if any(p.part not in names for p in self.ports):
+            raise ValueError("Every port must connect to an existing part")
+        return self
+
+
+class Connection(StrictModel):
+    source: str
+    target: str
+    label: str = Field(min_length=1, max_length=100)
+    kind: Literal["sync", "async", "dependency"]
+
+
+class Entity(StrictModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
+    name: str = Field(min_length=1, max_length=60)
+    attributes: list[Member] = Field(max_length=12)
+    operations: list[str] = Field(max_length=8)
+    example_values: list[Member] = Field(max_length=12)
+
+
+class Relation(StrictModel):
+    source: str
+    target: str
+    kind: Literal["association", "composition", "aggregation", "inheritance"]
+    source_multiplicity: str = Field(pattern=r"^(1|0\.\.1|\*|1\.\.\*|0\.\.\*)$")
+    target_multiplicity: str = Field(pattern=r"^(1|0\.\.1|\*|1\.\.\*|0\.\.\*)$")
+    label: str = Field(min_length=1, max_length=80)
+
+
+class Actor(StrictModel):
+    name: str = Field(min_length=1, max_length=60)
+    goals: list[str] = Field(min_length=1, max_length=6)
+
+
+class Step(StrictModel):
+    action: str = Field(min_length=1, max_length=140)
+    owner: str
+    guard: str | None = Field(max_length=100)
+    alternative: str | None = Field(max_length=140)
+    parallel_actions: list[str] = Field(max_length=4)
+
+
+class Interaction(StrictModel):
+    source: str
+    target: str
+    message: str = Field(min_length=1, max_length=100)
+    kind: Literal["call", "return", "async"]
+    fragment: Literal["none", "loop", "alt"]
+    condition: str | None = Field(max_length=100)
+
+
+class Transition(StrictModel):
+    source: str
+    target: str
+    event: str = Field(min_length=1, max_length=100)
+    guard: str | None = Field(max_length=100)
+
+
+class Node(StrictModel):
+    name: str = Field(min_length=1, max_length=70)
+    kind: Literal["device", "container", "cloud", "database"]
+    components: list[str] = Field(min_length=1, max_length=12)
+
+
+class Stereotype(StrictModel):
+    name: str = Field(min_length=1, max_length=60)
+    base: Literal["Component", "Class", "Node"]
+    tags: list[Member] = Field(max_length=5)
+    constraint: str = Field(min_length=1, max_length=160)
+
+
+class Tick(StrictModel):
+    time_ms: int = Field(ge=0, le=1_000_000)
+    state: str = Field(min_length=1, max_length=50)
+
+
+class Timeline(StrictModel):
+    component: str
+    ticks: list[Tick] = Field(min_length=2, max_length=10)
+
+    @model_validator(mode="after")
+    def ticks_are_ordered(self):
+        times = [t.time_ms for t in self.ticks]
+        if times != sorted(set(times)):
+            raise ValueError("Timeline ticks must have strictly increasing timestamps")
+        return self
+
+
+class Architecture(StrictModel):
+    title: str = Field(min_length=1, max_length=100)
+    summary: str = Field(min_length=1, max_length=1000)
+    requirements: list[str] = Field(min_length=1, max_length=15)
+    assumptions: list[str] = Field(min_length=1, max_length=12)
+    components: list[Component] = Field(min_length=2, max_length=16)
+    connections: list[Connection] = Field(min_length=1, max_length=30)
+    entities: list[Entity] = Field(min_length=1, max_length=10)
+    relations: list[Relation] = Field(max_length=20)
+    actors: list[Actor] = Field(min_length=1, max_length=6)
+    steps: list[Step] = Field(min_length=1, max_length=12)
+    interactions: list[Interaction] = Field(min_length=1, max_length=24)
+    states: list[str] = Field(min_length=2, max_length=12)
+    transitions: list[Transition] = Field(min_length=1, max_length=20)
+    nodes: list[Node] = Field(min_length=1, max_length=8)
+    stereotypes: list[Stereotype] = Field(min_length=1, max_length=5)
+    timelines: list[Timeline] = Field(min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def references_are_consistent(self):
+        cids = {c.id for c in self.components}
+        eids = {e.id for e in self.entities}
+        if len(cids) != len(self.components) or len(eids) != len(self.entities):
+            raise ValueError("Component and entity IDs must be unique")
+        if len(set(self.states)) != len(self.states):
+            raise ValueError("State names must be unique")
+        for x in [*self.connections, *self.interactions]:
+            if x.source not in cids or x.target not in cids:
+                raise ValueError("Connection or interaction references an unknown component")
+        for r in self.relations:
+            if r.source not in eids or r.target not in eids:
+                raise ValueError("Relation references an unknown entity")
+        if any(s.owner not in cids for s in self.steps):
+            raise ValueError("Workflow step references an unknown owner")
+        if any(c not in cids for n in self.nodes for c in n.components):
+            raise ValueError("Deployment references an unknown component")
+        if any(t.component not in cids for t in self.timelines):
+            raise ValueError("Timeline references an unknown component")
+        for t in self.transitions:
+            if t.source not in self.states or t.target not in self.states:
+                raise ValueError("Transition references an unknown state")
+        for i in self.interactions:
+            if i.fragment != "none" and not i.condition:
+                raise ValueError("An interaction fragment requires a condition")
+        for s in self.steps:
+            if bool(s.guard) != bool(s.alternative):
+                raise ValueError("A guarded workflow step needs an alternative")
+        return self
+
+
+class GenerateRequest(StrictModel):
+    prompt: str = Field(min_length=10, max_length=12000)
+    diagram_types: list[DiagramType] = Field(
+        default_factory=lambda: [DiagramType.SEQUENCE, DiagramType.COMPONENT], min_length=1, max_length=14
+    )
+    conversation_id: UUID | None = None
+    base_revision: int | None = Field(default=None, ge=1)
+    request_id: UUID = Field(default_factory=uuid4)
+
+    @field_validator("prompt")
+    @classmethod
+    def prompt_not_blank(cls, v):
+        v = v.strip()
+        if len(v) < 10:
+            raise ValueError("Describe your design in at least 10 characters")
+        return v
+
+    @field_validator("diagram_types", mode="before")
+    @classmethod
+    def normalize_types(cls, v):
+        aliases = {"sequential": "sequence", "state": "state_machine", "usecase": "use_case"}
+        return list(dict.fromkeys(aliases.get(x, x) for x in v)) if isinstance(v, list) else v
+
+    @model_validator(mode="after")
+    def revision_for_update(self):
+        if self.conversation_id and self.base_revision is None:
+            raise ValueError("base_revision is required when updating a conversation")
+        if not self.conversation_id and self.base_revision is not None:
+            raise ValueError("base_revision requires conversation_id")
+        return self
+
+
+class FeedbackRequest(StrictModel):
+    revision_id: UUID
+    rating: Literal[1, 2, 3, 4, 5]
+    comment: str = Field(default="", max_length=4000)
+    diagram_type: DiagramType | None = None
+    request_id: UUID = Field(default_factory=uuid4)
+
+
+class SourceRequest(StrictModel):
+    source: str = Field(min_length=10, max_length=30000)

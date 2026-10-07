@@ -1,0 +1,26 @@
+[project]
+name = "forma-uml"
+version = "0.1.0"
+description = "A conversational UML design workspace with verifiable diagrams and ART feedback"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "pydantic-settings>=2.8,<3",
+  "langgraph>=0.6,<2", "langchain-openai>=0.3,<2", "defusedxml>=0.7,<1"
+]
+[project.optional-dependencies]
+training = ["openpipe-art[langgraph]>=0.5,<1"]
+[dependency-groups]
+dev = ["pytest>=8,<9", "pytest-asyncio>=0.25,<2", "httpx>=0.28,<1", "ruff>=0.11,<1"]
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = ["renderer: requires the pinned PlantUML jar and Java"]
+[tool.ruff]
+line-length = 110
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+ignore = ["E501"]
+[tool.ruff.lint.per-file-ignores]
+"app/main.py" = ["B008"]

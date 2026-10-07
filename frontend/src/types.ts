@@ -1,0 +1,80 @@
+export type DiagramKind =
+  | 'sequence'
+  | 'component'
+  | 'class'
+  | 'object'
+  | 'composite_structure'
+  | 'deployment'
+  | 'package'
+  | 'profile'
+  | 'use_case'
+  | 'activity'
+  | 'state_machine'
+  | 'communication'
+  | 'interaction_overview'
+  | 'timing';
+export interface CatalogEntry {
+  id: DiagramKind;
+  label: string;
+  category: string;
+  description: string;
+}
+export interface Session {
+  mode: 'sample' | 'live';
+  model: string | null;
+  sample_prompt: string;
+  sample_updates: string[];
+  diagram_types: CatalogEntry[];
+}
+export interface Component {
+  id: string;
+  name: string;
+  kind: string;
+  package: string;
+  responsibility: string;
+}
+export interface Architecture {
+  title: string;
+  summary: string;
+  requirements: string[];
+  assumptions: string[];
+  components: Component[];
+  connections: { source: string; target: string; label: string; kind: string }[];
+}
+export interface Diagram {
+  type: DiagramKind;
+  source: string;
+  svg: string;
+  validated: boolean;
+  cache_hit: boolean;
+}
+export interface Revision {
+  id: string;
+  conversation_id: string;
+  number: number;
+  request_id: string;
+  prompt: string;
+  architecture: Architecture;
+  diagrams: Diagram[];
+  mode: string;
+  created_at: string;
+  timings: { design_ms: number; render_ms: number; total_ms: number };
+}
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  latest: number;
+  updated_at: string;
+}
+export interface Conversation extends ConversationSummary {
+  revisions: Revision[];
+}
+export interface Feedback {
+  id: string;
+  revision_id: string;
+  rating: number;
+  comment: string;
+  diagram_type: DiagramKind | null;
+  training_status: string;
+  created_at: string;
+}

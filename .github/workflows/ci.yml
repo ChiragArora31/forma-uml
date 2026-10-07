@@ -1,0 +1,50 @@
+name: Verify Forma
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.22'
+          enable-cache: true
+      - run: sudo apt-get update && sudo apt-get install -y graphviz
+      - run: ./scripts/setup.sh
+      - run: uv sync --frozen --extra training
+      - run: uv run ruff check app tests && uv run ruff format --check app tests
+      - run: uv run --extra training pytest -q
+      - run: npm run typecheck --prefix frontend
+      - run: npm run format:check --prefix frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Production UI journey and accessibility
+        env:
+          FORMA_E2E_URL: http://127.0.0.1:8018
+          FORMA_DATA_DIR: /tmp/forma-ci-data
+        run: |
+          uv run uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8018 > /tmp/forma-api.log 2>&1 &
+          forma_api_pid=$!
+          trap 'kill "$forma_api_pid"' EXIT
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8018/api/health && break
+            sleep 1
+          done
+          npm run test:e2e --prefix frontend
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure
+          path: frontend/test-results

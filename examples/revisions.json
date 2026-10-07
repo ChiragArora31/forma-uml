@@ -1,0 +1,6 @@
+{
+  "updates": [
+    "Decouple circular ingestion from analysis using a durable queue, with retries and a dead-letter queue.",
+    "Add a compliance officer approval step before publishing the impact report."
+  ]
+}
